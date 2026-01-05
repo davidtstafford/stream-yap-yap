@@ -1,5 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
+import { initializeDatabase } from './database/migrations';
+import { closeDatabase } from './database/connection';
+import { DatabaseService } from './database/service';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -30,9 +33,16 @@ function createWindow(): void {
   });
 }
 
-app.on('ready', createWindow);
+// Initialize database before creating window
+app.on('ready', () => {
+  console.log('Initializing database...');
+  initializeDatabase();
+  console.log('Database initialized');
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
+  closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -44,7 +54,38 @@ app.on('activate', () => {
   }
 });
 
-// IPC handlers will be added here as we build features
+// IPC handlers for database operations
+ipcMain.handle('db:getSetting', async (_event, key: string) => {
+  return DatabaseService.getSetting(key);
+});
+
+ipcMain.handle('db:setSetting', async (_event, key: string, value: string) => {
+  DatabaseService.setSetting(key, value);
+  return true;
+});
+
+ipcMain.handle('db:getAllSettings', async () => {
+  return DatabaseService.getAllSettings();
+});
+
+ipcMain.handle('db:getViewers', async () => {
+  return DatabaseService.getAllViewers();
+});
+
+ipcMain.handle('db:getChatHistory', async (_event, limit?: number, offset?: number) => {
+  return DatabaseService.getChatHistory(limit, offset);
+});
+
+ipcMain.handle('db:searchChatHistory', async (_event, searchTerm: string, limit?: number) => {
+  return DatabaseService.searchChatHistory(searchTerm, limit);
+});
+
+ipcMain.handle('db:clearChatHistory', async () => {
+  DatabaseService.clearChatHistory();
+  return true;
+});
+
+// Test handler
 ipcMain.handle('ping', async () => {
   return 'pong';
 });
