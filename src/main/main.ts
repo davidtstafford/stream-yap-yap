@@ -3,6 +3,7 @@ import * as path from 'path';
 import { initializeDatabase } from './database/migrations';
 import { closeDatabase } from './database/connection';
 import { DatabaseService } from './database/service';
+import { VoiceService } from './database/voiceService';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -83,6 +84,19 @@ ipcMain.handle('db:searchChatHistory', async (_event, searchTerm: string, limit?
 ipcMain.handle('db:clearChatHistory', async () => {
   DatabaseService.clearChatHistory();
   return true;
+});
+
+ipcMain.handle('db:getAvailableVoices', async (_event, provider?: string) => {
+  return VoiceService.getAvailableVoices(provider);
+});
+
+ipcMain.handle('db:scanVoices', async () => {
+  await VoiceService.scanAndSyncVoices();
+  return true;
+});
+
+ipcMain.handle('db:isVoiceAvailable', async (_event, voiceId: string, provider: string) => {
+  return VoiceService.isVoiceAvailable(voiceId, provider);
 });
 
 // Test handler

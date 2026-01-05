@@ -1,5 +1,6 @@
 import { getDatabase } from './connection';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
+import { VoiceService } from './voiceService';
 
 export function initializeDatabase(): void {
   const db = getDatabase();
@@ -37,6 +38,11 @@ export function initializeDatabase(): void {
   
   // Insert default commands if not exists
   insertDefaultCommands();
+  
+  // Scan and sync TTS voices on startup
+  VoiceService.scanAndSyncVoices().catch(err => {
+    console.error('Failed to scan TTS voices:', err);
+  });
 }
 
 function insertDefaultSettings(): void {
