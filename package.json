@@ -1,0 +1,75 @@
+{
+  "name": "stream-yap-yap",
+  "version": "0.1.0",
+  "description": "Stable Twitch Chat-to-TTS application",
+  "main": "./dist/main.js",
+  "author": "David Stafford",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
+    "dev:main": "webpack --config webpack.main.config.js --mode development --watch",
+    "dev:renderer": "webpack serve --config webpack.renderer.config.js --mode development",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "webpack --config webpack.main.config.js --mode production",
+    "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
+    "package": "electron-builder",
+    "package:mac": "electron-builder --mac",
+    "package:win": "electron-builder --win",
+    "package:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "tmi.js": "^1.8.5",
+    "@aws-sdk/client-polly": "^3.713.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.41.1",
+    "@google-cloud/text-to-speech": "^5.5.0",
+    "discord.js": "^14.17.3",
+    "express": "^4.21.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/tmi.js": "^1.8.6",
+    "concurrently": "^9.1.2",
+    "css-loader": "^7.1.2",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "html-webpack-plugin": "^5.6.3",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.3",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.davidtstafford.stream-yap-yap",
+    "productName": "Stream Yap Yap",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
+  }
+}
