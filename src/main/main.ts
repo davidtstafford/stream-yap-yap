@@ -6,9 +6,11 @@ import { DatabaseService } from './database/service';
 import { VoiceService } from './database/voiceService';
 import { getTwitchService } from './twitch/twitchService';
 import { TwitchOAuthService } from './twitch/oauthService';
+import { getTwitchApiService } from './twitch/twitchApiService';
 
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
+const twitchApiService = getTwitchApiService();
 const oauthService = new TwitchOAuthService();
 
 function createWindow(): void {
@@ -104,9 +106,22 @@ ipcMain.handle('twitch:authenticateOAuth', async () => {
   try {
     const result = await oauthService.authenticate();
     
-    // Save token and username to database
+    // Get user info to retrieve user ID
+    const response = await fetch('https://api.twitch.tv/helix/users', {
+      headers: {
+        'Authorization': `Bearer ${result.token}`,
+        'Client-Id': oauthService.getClientId()
+      }
+    });
+    
+    const userData = await response.json() as { data: Array<{ id: string; login: string }> };
+    const userId = userData.data[0].id;
+    
+    // Save token, username, user ID, and client ID to database
     DatabaseService.setSetting('twitch_token', result.token);
     DatabaseService.setSetting('twitch_username', result.username);
+    DatabaseService.setSetting('twitch_user_id', userId);
+    DatabaseService.setSetting('twitch_client_id', oauthService.getClientId());
     
     return {
       success: true,
@@ -264,4 +279,77 @@ ipcMain.handle('db:updateLastTTSTime', async (_event, viewerId: string) => {
 // Test handler
 ipcMain.handle('ping', async () => {
   return 'pong';
+});
+
+// Twitch API handlers for viewer management
+ipcMain.handle('twitch:api:configure', async (_event, config: { clientId: string; accessToken: string; broadcasterId: string; broadcasterUsername: string }) => {
+  try {
+    twitchApiService.configure(config);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:syncAllStatuses', async () => {
+  try {
+    await twitchApiService.syncAllStatuses();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:addModerator', async (_event, username: string) => {
+  try {
+    await twitchApiService.addModerator(username);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:removeModerator', async (_event, username: string) => {
+  try {
+    await twitchApiService.removeModerator(username);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:addVip', async (_event, username: string) => {
+  try {
+    await twitchApiService.addVip(username);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:removeVip', async (_event, username: string) => {
+  try {
+    await twitchApiService.removeVip(username);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:banUser', async (_event, username: string, reason?: string, duration?: number) => {
+  try {
+    await twitchApiService.banUser(username, reason, duration);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('twitch:api:unbanUser', async (_event, username: string) => {
+  try {
+    await twitchApiService.unbanUser(username);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
 });

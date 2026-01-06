@@ -58,23 +58,25 @@ export class DatabaseService {
     const username = viewer.username.toLowerCase();
     
     db.prepare(`
-      INSERT INTO viewers (id, username, display_name, is_moderator, is_vip, is_subscriber, first_seen_at, last_seen_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO viewers (id, username, display_name, is_moderator, is_vip, is_subscriber, is_banned, first_seen_at, last_seen_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         username = excluded.username,
         display_name = excluded.display_name,
-        is_moderator = excluded.is_moderator,
-        is_vip = excluded.is_vip,
-        is_subscriber = excluded.is_subscriber,
+        is_moderator = COALESCE(excluded.is_moderator, viewers.is_moderator),
+        is_vip = COALESCE(excluded.is_vip, viewers.is_vip),
+        is_subscriber = COALESCE(excluded.is_subscriber, viewers.is_subscriber),
+        is_banned = COALESCE(excluded.is_banned, viewers.is_banned),
         last_seen_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
     `).run(
       viewer.id,
       username,
       viewer.display_name || viewer.username,
-      viewer.is_moderator ? 1 : 0,
-      viewer.is_vip ? 1 : 0,
-      viewer.is_subscriber ? 1 : 0
+      viewer.is_moderator !== undefined ? (viewer.is_moderator ? 1 : 0) : null,
+      viewer.is_vip !== undefined ? (viewer.is_vip ? 1 : 0) : null,
+      viewer.is_subscriber !== undefined ? (viewer.is_subscriber ? 1 : 0) : null,
+      viewer.is_banned !== undefined ? (viewer.is_banned ? 1 : 0) : null
     );
   }
 
@@ -99,6 +101,38 @@ export class DatabaseService {
   static incrementViewerMessageCount(viewerId: string): void {
     const db = getDatabase();
     db.prepare('UPDATE viewers SET message_count = message_count + 1 WHERE id = ?').run(viewerId);
+  }
+
+  static updateViewerModStatus(viewerId: string, isMod: boolean): void {
+    const db = getDatabase();
+    db.prepare('UPDATE viewers SET is_moderator = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(isMod ? 1 : 0, viewerId);
+  }
+
+  static updateViewerVipStatus(viewerId: string, isVip: boolean): void {
+    const db = getDatabase();
+    db.prepare('UPDATE viewers SET is_vip = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(isVip ? 1 : 0, viewerId);
+  }
+
+  static updateViewerSubscriberStatus(viewerId: string, isSub: boolean): void {
+    const db = getDatabase();
+    db.prepare('UPDATE viewers SET is_subscriber = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(isSub ? 1 : 0, viewerId);
+  }
+
+  static updateViewerBannedStatus(viewerId: string, isBanned: boolean): void {
+    const db = getDatabase();
+    db.prepare('UPDATE viewers SET is_banned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(isBanned ? 1 : 0, viewerId);
+  }
+
+  static resetViewerStatuses(): void {
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE viewers 
+      SET is_moderator = 0, is_vip = 0, is_subscriber = 0, is_banned = 0, updated_at = CURRENT_TIMESTAMP
+    `).run();
   }
 
   // Chat Messages (batched inserts for performance)

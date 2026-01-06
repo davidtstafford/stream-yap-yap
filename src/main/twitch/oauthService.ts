@@ -4,7 +4,18 @@ import { URL } from 'url';
 
 const TWITCH_CLIENT_ID = 'la400d26u2wzvw1kw1c1my0lx99rt0';
 const REDIRECT_URI = 'http://localhost:3000/auth/callback';
-const SCOPES = ['chat:read', 'chat:edit', 'channel:read:subscriptions', 'channel:read:vips', 'moderator:read:followers'];
+const SCOPES = [
+  'chat:read',
+  'chat:edit',
+  'channel:read:subscriptions',
+  'channel:read:vips',
+  'moderator:read:followers',
+  'moderator:read:moderators',
+  'moderation:read',
+  'channel:manage:moderators',
+  'channel:manage:vips',
+  'moderator:manage:banned_users'
+];
 
 interface TokenResponse {
   access_token: string;
@@ -210,6 +221,13 @@ export class TwitchOAuthService {
 
     const data = await response.json() as { data: UserInfo[] };
     return data.data[0];
+  }
+
+  /**
+   * Get client ID
+   */
+  getClientId(): string {
+    return TWITCH_CLIENT_ID;
   }
 
   /**

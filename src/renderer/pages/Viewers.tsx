@@ -23,15 +23,40 @@ const Viewers: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [isApiConfigured, setIsApiConfigured] = useState(false);
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [banModalViewer, setBanModalViewer] = useState<Viewer | null>(null);
+  const [banReason, setBanReason] = useState('');
 
   useEffect(() => {
     loadViewers();
+    configureApiOnLoad();
   }, []);
 
   useEffect(() => {
     applyFilters();
   }, [viewers, searchTerm, filter]);
+
+  const configureApiOnLoad = async () => {
+    // Configure Twitch API service with stored credentials
+    const clientId = await window.api.invoke('db:getSetting', 'twitch_client_id');
+    const accessToken = await window.api.invoke('db:getSetting', 'twitch_token');
+    const broadcasterId = await window.api.invoke('db:getSetting', 'twitch_user_id');
+    const broadcasterUsername = await window.api.invoke('db:getSetting', 'twitch_username');
+
+    if (clientId && accessToken && broadcasterId && broadcasterUsername) {
+      await window.api.invoke('twitch:api:configure', {
+        clientId,
+        accessToken: accessToken.replace('oauth:', ''),
+        broadcasterId,
+        broadcasterUsername
+      });
+      setIsApiConfigured(true);
+    }
+  };
 
   const loadViewers = async () => {
     try {
@@ -101,6 +126,114 @@ const Viewers: React.FC = () => {
     return date.toLocaleDateString();
   };
 
+  const syncStatuses = async () => {
+    if (!isApiConfigured) {
+      setError('Please connect to Twitch first (Connection screen) to enable sync functionality');
+      return;
+    }
+
+    try {
+      setSyncing(true);
+      setError(null);
+      const result = await window.api.invoke('twitch:api:syncAllStatuses');
+      if (!result.success) {
+        setError(result.error || 'Failed to sync statuses');
+      } else {
+        // Reload viewers after sync
+        await loadViewers();
+      }
+    } catch (err) {
+      console.error('Failed to sync statuses:', err);
+      setError('Failed to sync statuses');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleModAction = async (viewer: Viewer) => {
+    const action = viewer.is_moderator ? 'removeModerator' : 'addModerator';
+    try {
+      setActionLoading(`mod-${viewer.id}`);
+      const result = await window.api.invoke(`twitch:api:${action}`, viewer.username);
+      if (!result.success) {
+        alert(result.error || 'Action failed');
+      } else {
+        await loadViewers();
+      }
+    } catch (err) {
+      console.error('Mod action failed:', err);
+      alert('Action failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleVipAction = async (viewer: Viewer) => {
+    const action = viewer.is_vip ? 'removeVip' : 'addVip';
+    try {
+      setActionLoading(`vip-${viewer.id}`);
+      const result = await window.api.invoke(`twitch:api:${action}`, viewer.username);
+      if (!result.success) {
+        alert(result.error || 'Action failed');
+      } else {
+        await loadViewers();
+      }
+    } catch (err) {
+      console.error('VIP action failed:', err);
+      alert('Action failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBanAction = async (viewer: Viewer) => {
+    console.log('Ban button clicked for:', viewer.username, 'Current banned status:', viewer.is_banned);
+    if (viewer.is_banned) {
+      // Unban
+      try {
+        setActionLoading(`ban-${viewer.id}`);
+        const result = await window.api.invoke('twitch:api:unbanUser', viewer.username);
+        if (!result.success) {
+          alert(result.error || 'Action failed');
+        } else {
+          await loadViewers();
+        }
+      } catch (err) {
+        console.error('Unban action failed:', err);
+        alert('Action failed');
+      } finally {
+        setActionLoading(null);
+      }
+    } else {
+      // Ban - show modal
+      setBanModalViewer(viewer);
+      setBanReason('');
+      setShowBanModal(true);
+    }
+  };
+
+  const executeBan = async () => {
+    if (!banModalViewer) return;
+    
+    setShowBanModal(false);
+    try {
+      setActionLoading(`ban-${banModalViewer.id}`);
+      const result = await window.api.invoke('twitch:api:banUser', banModalViewer.username, banReason || undefined);
+      if (!result.success) {
+        alert(result.error || 'Action failed');
+      } else {
+        await loadViewers();
+      }
+    } catch (err) {
+      console.error('Ban action failed:', err);
+      alert('Action failed');
+    } finally {
+      setActionLoading(null);
+      setBanModalViewer(null);
+      setBanReason('');
+    }
+  };
+
   const getBadges = (viewer: Viewer): string[] => {
     const badges: string[] = [];
     if (viewer.is_moderator) badges.push('MOD');
@@ -141,9 +274,19 @@ const Viewers: React.FC = () => {
     <div className="viewers-container">
       <div className="viewers-header">
         <h1>Viewers</h1>
-        <button className="refresh-btn" onClick={loadViewers}>
-          🔄 Refresh
-        </button>
+        <div className="header-actions">
+          <button 
+            className="sync-btn" 
+            onClick={syncStatuses}
+            disabled={syncing || !isApiConfigured}
+            title={!isApiConfigured ? 'Connect to Twitch first to enable sync' : 'Sync viewer statuses from Twitch'}
+          >
+            {syncing ? '⏳ Syncing...' : '🔄 Sync Statuses'}
+          </button>
+          <button className="refresh-btn" onClick={loadViewers}>
+            🔄 Refresh
+          </button>
+        </div>
       </div>
 
       <div className="viewers-controls">
@@ -202,12 +345,13 @@ const Viewers: React.FC = () => {
               <th>Messages</th>
               <th>First Seen</th>
               <th>Last Seen</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredViewers.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
                   No viewers found
                 </td>
               </tr>
@@ -245,12 +389,66 @@ const Viewers: React.FC = () => {
                   <td className="date-cell">
                     {formatDate(viewer.last_seen_at)}
                   </td>
+                  <td>
+                    <div className="action-buttons">
+                      <button 
+                        className={`action-btn ${viewer.is_moderator ? 'active-mod' : ''}`}
+                        onClick={() => handleModAction(viewer)}
+                        disabled={actionLoading === `mod-${viewer.id}`}
+                        title={viewer.is_moderator ? 'Remove Moderator' : 'Make Moderator'}
+                      >
+                        {actionLoading === `mod-${viewer.id}` ? '...' : viewer.is_moderator ? '- MOD' : '+ MOD'}
+                      </button>
+                      <button 
+                        className={`action-btn ${viewer.is_vip ? 'active-vip' : ''}`}
+                        onClick={() => handleVipAction(viewer)}
+                        disabled={actionLoading === `vip-${viewer.id}`}
+                        title={viewer.is_vip ? 'Remove VIP' : 'Add VIP'}
+                      >
+                        {actionLoading === `vip-${viewer.id}` ? '...' : viewer.is_vip ? '- VIP' : '+ VIP'}
+                      </button>
+                      <button 
+                        className={`action-btn ${viewer.is_banned ? 'active-ban' : ''}`}
+                        onClick={() => handleBanAction(viewer)}
+                        disabled={actionLoading === `ban-${viewer.id}`}
+                        title={viewer.is_banned ? 'Unban' : 'Ban'}
+                      >
+                        {actionLoading === `ban-${viewer.id}` ? '...' : viewer.is_banned ? 'Unban' : 'Ban'}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Ban Modal */}
+      {showBanModal && (
+        <div className="modal-overlay" onClick={() => setShowBanModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Ban {banModalViewer?.username}</h3>
+            <p>Enter an optional reason for the ban:</p>
+            <input
+              type="text"
+              value={banReason}
+              onChange={(e) => setBanReason(e.target.value)}
+              placeholder="Ban reason (optional)"
+              className="modal-input"
+              autoFocus
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') executeBan();
+                if (e.key === 'Escape') setShowBanModal(false);
+              }}
+            />
+            <div className="modal-buttons">
+              <button onClick={executeBan} className="modal-btn-primary">Ban User</button>
+              <button onClick={() => setShowBanModal(false)} className="modal-btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .viewers-container {
@@ -274,7 +472,12 @@ const Viewers: React.FC = () => {
           color: #fff;
         }
 
-        .refresh-btn {
+        .header-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+
+        .sync-btn, .refresh-btn {
           padding: 0.5rem 1rem;
           background: #9147ff;
           color: white;
@@ -284,8 +487,13 @@ const Viewers: React.FC = () => {
           font-size: 1rem;
         }
 
-        .refresh-btn:hover {
+        .sync-btn:hover, .refresh-btn:hover {
           background: #7c3aed;
+        }
+
+        .sync-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .viewers-controls {
@@ -434,6 +642,46 @@ const Viewers: React.FC = () => {
           font-size: 0.9rem;
         }
 
+        .action-buttons {
+          display: flex;
+          gap: 0.25rem;
+          flex-wrap: wrap;
+        }
+
+        .action-btn {
+          padding: 0.25rem 0.5rem;
+          font-size: 0.75rem;
+          border: 1px solid #444;
+          border-radius: 3px;
+          cursor: pointer;
+          background: #2a2a2a;
+          color: #fff;
+        }
+
+        .action-btn:hover:not(:disabled) {
+          background: #3a3a3a;
+        }
+
+        .action-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .action-btn.active-mod {
+          background: #00ad03;
+          border-color: #00ad03;
+        }
+
+        .action-btn.active-vip {
+          background: #e005b9;
+          border-color: #e005b9;
+        }
+
+        .action-btn.active-ban {
+          background: #dc2626;
+          border-color: #dc2626;
+        }
+
         .loading, .error {
           text-align: center;
           padding: 3rem;
@@ -443,6 +691,82 @@ const Viewers: React.FC = () => {
 
         .error {
           color: #dc2626;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .modal-content {
+          background: #2a2a2a;
+          padding: 2rem;
+          border-radius: 8px;
+          border: 1px solid #444;
+          min-width: 400px;
+          max-width: 500px;
+        }
+
+        .modal-content h3 {
+          margin-top: 0;
+          margin-bottom: 1rem;
+          color: #fff;
+        }
+
+        .modal-content p {
+          color: #ccc;
+          margin-bottom: 1rem;
+        }
+
+        .modal-input {
+          width: 100%;
+          padding: 0.75rem;
+          font-size: 1rem;
+          border: 1px solid #444;
+          border-radius: 4px;
+          background: #1a1a1a;
+          color: #fff;
+          margin-bottom: 1.5rem;
+        }
+
+        .modal-buttons {
+          display: flex;
+          gap: 0.5rem;
+          justify-content: flex-end;
+        }
+
+        .modal-btn-primary, .modal-btn-secondary {
+          padding: 0.5rem 1rem;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 0.9rem;
+        }
+
+        .modal-btn-primary {
+          background: #dc2626;
+          color: white;
+        }
+
+        .modal-btn-primary:hover {
+          background: #b91c1c;
+        }
+
+        .modal-btn-secondary {
+          background: #444;
+          color: white;
+        }
+
+        .modal-btn-secondary:hover {
+          background: #555;
         }
       `}</style>
     </div>

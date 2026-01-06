@@ -108,7 +108,8 @@ const Connection: React.FC = () => {
             padding: '10px',
             backgroundColor: '#f8f9fa',
             borderRadius: '4px',
-            fontSize: '14px'
+            fontSize: '14px',
+            color: '#212529'
           }}>
             {status}
           </div>
