@@ -63,8 +63,6 @@ const App: React.FC = () => {
   };
 
   const processMessageForTTS = async (message: ChatMessage) => {
-    if (!ttsEnabled) return;
-
     const messageKey = `${message.viewer_id}-${message.timestamp}`;
     if (processedMessagesRef.current.has(messageKey)) {
       return; // Already processed
@@ -72,28 +70,75 @@ const App: React.FC = () => {
     processedMessagesRef.current.add(messageKey);
     
     try {
-      // Check if viewer is muted
-      const isMuted = await window.api.invoke('db:getSetting', `viewer_muted_${message.viewer_id}`);
-      if (isMuted === 'true') return;
+      // Check global TTS enabled setting (mutetts/unmutetts)
+      const globalEnabled = await window.api.invoke('db:getSetting', 'tts_enabled');
+      if (globalEnabled === 'false') {
+        console.log('TTS is globally muted');
+        return;
+      }
+
+      // Check if viewer has TTS restrictions
+      const restrictions = await window.api.invoke('db:getViewerTTSRestrictions', message.viewer_id);
+      if (restrictions) {
+        // Check if viewer is muted
+        if (restrictions.is_muted) {
+          // Check if mute has expired
+          if (restrictions.mute_expires_at) {
+            const expiresAt = new Date(restrictions.mute_expires_at);
+            if (expiresAt > new Date()) {
+              console.log(`${message.username} is muted until ${expiresAt}`);
+              return;
+            }
+          } else {
+            // Permanent mute
+            console.log(`${message.username} is permanently muted`);
+            return;
+          }
+        }
+
+        // Check cooldown
+        if (restrictions.has_cooldown && restrictions.last_tts_at) {
+          const lastTTS = new Date(restrictions.last_tts_at);
+          const cooldownSeconds = restrictions.cooldown_gap_seconds || 0;
+          const timeSinceLastTTS = (Date.now() - lastTTS.getTime()) / 1000;
+          
+          if (timeSinceLastTTS < cooldownSeconds) {
+            console.log(`${message.username} is on cooldown for ${cooldownSeconds - timeSinceLastTTS}s more`);
+            return;
+          }
+        }
+      }
       
       // Get viewer's voice preference (or use default)
+      const voicePrefs = await window.api.invoke('db:getViewerVoicePreference', message.viewer_id);
       const defaultVoice = await window.api.invoke('db:getSetting', 'tts_default_voice');
       const defaultSpeed = await window.api.invoke('db:getSetting', 'tts_default_speed');
       const defaultPitch = await window.api.invoke('db:getSetting', 'tts_default_pitch');
       const defaultVolume = await window.api.invoke('db:getSetting', 'tts_default_volume');
       
+      // Use viewer preferences if available, otherwise use defaults
+      const voiceId = voicePrefs?.voice_id || defaultVoice;
+      const speed = voicePrefs?.speed || (defaultSpeed ? parseFloat(defaultSpeed) : 1.0);
+      const pitch = voicePrefs?.pitch || (defaultPitch ? parseFloat(defaultPitch) : 1.0);
+      const volume = voicePrefs?.volume || (defaultVolume ? parseFloat(defaultVolume) : 1.0);
+      
       // Add to TTS queue
       ttsQueue.add({
         id: `msg-${message.viewer_id}-${Date.now()}`,
         text: `${message.display_name || message.username} says: ${message.message}`,
-        voiceId: defaultVoice || undefined,
-        provider: 'webspeech',
-        speed: defaultSpeed ? parseFloat(defaultSpeed) : 1.0,
-        pitch: defaultPitch ? parseFloat(defaultPitch) : 1.0,
-        volume: defaultVolume ? parseFloat(defaultVolume) : 1.0,
+        voiceId: voiceId || undefined,
+        provider: voicePrefs?.provider || 'webspeech',
+        speed,
+        pitch,
+        volume,
         viewerId: message.viewer_id,
         username: message.display_name || message.username
       });
+
+      // Update last TTS timestamp for cooldown tracking
+      if (restrictions?.has_cooldown) {
+        await window.api.invoke('db:updateLastTTSTime', message.viewer_id);
+      }
     } catch (err) {
       console.error('Failed to process message for TTS:', err);
     }

@@ -22,6 +22,20 @@ export interface CommandResult {
   error?: string;
 }
 
+interface TTSVoiceRow {
+  id: number;
+  voice_id: string;
+  name: string;
+  provider: string;
+  language_code: string;
+  language_name: string;
+  region?: string;
+  gender?: string;
+  is_available: number;
+  last_scanned_at?: string;
+  created_at: string;
+}
+
 export class CommandProcessor {
   private commands: Map<string, CommandHandler> = new Map();
   private commandPrefix = '~';
@@ -237,7 +251,7 @@ export class CommandProcessor {
       SELECT * FROM tts_voices 
       WHERE LOWER(name) = ? AND is_available = 1 
       LIMIT 1
-    `).get(voiceName);
+    `).get(voiceName) as TTSVoiceRow | undefined;
 
     if (!voice) {
       return { success: false, error: `Voice "${voiceName}" not found. Use ~voices to see available voices.` };

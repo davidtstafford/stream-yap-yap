@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { initializeDatabase } from './database/migrations';
-import { closeDatabase } from './database/connection';
+import { closeDatabase, getDatabase } from './database/connection';
 import { DatabaseService } from './database/service';
 import { VoiceService } from './database/voiceService';
 import { getTwitchService } from './twitch/twitchService';
@@ -222,6 +222,34 @@ ipcMain.handle('twitch:forgetCredentials', async () => {
   DatabaseService.setSetting('twitch_token', '');
   DatabaseService.setSetting('twitch_connected', 'false');
   return { success: true };
+});
+
+// TTS restriction handlers
+ipcMain.handle('db:getViewerTTSRestrictions', async (_event, viewerId: string) => {
+  const db = getDatabase();
+  const restrictions = db.prepare(`
+    SELECT * FROM viewer_tts_restrictions WHERE viewer_id = ?
+  `).get(viewerId);
+  return restrictions;
+});
+
+ipcMain.handle('db:getViewerVoicePreference', async (_event, viewerId: string) => {
+  const db = getDatabase();
+  const preference = db.prepare(`
+    SELECT * FROM viewer_voice_preferences WHERE viewer_id = ?
+  `).get(viewerId);
+  return preference;
+});
+
+ipcMain.handle('db:updateLastTTSTime', async (_event, viewerId: string) => {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE viewer_tts_restrictions 
+    SET last_tts_at = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE viewer_id = ?
+  `).run(now, viewerId);
+  return true;
 });
 
 // Test handler
