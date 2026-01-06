@@ -241,9 +241,22 @@ export class CommandProcessor {
    * ~voices - Show voices link
    */
   private async handleVoices(context: CommandContext, args: string[]): Promise<CommandResult> {
+    const db = getDatabase();
+    const voiceCount = db.prepare('SELECT COUNT(*) as count FROM tts_voices WHERE is_available = 1').get() as { count: number };
+    
+    // Get a sample of popular English voices
+    const sampleVoices = db.prepare(`
+      SELECT name FROM tts_voices 
+      WHERE is_available = 1 AND language_code LIKE 'en-%'
+      ORDER BY name
+      LIMIT 10
+    `).all() as { name: string }[];
+    
+    const voiceNames = sampleVoices.map(v => v.name).join(', ');
+    
     return {
       success: true,
-      response: `Check available voices at: [Voice list would be generated from database]`
+      response: `${voiceCount.count} voices available. Examples: ${voiceNames}... Use ~setvoice <name> to choose.`
     };
   }
 
@@ -286,16 +299,16 @@ export class CommandProcessor {
   }
 
   /**
-   * ~setvoicepitch <value> - Set user's voice pitch (-10 to +10)
+   * ~setvoicepitch <value> - Set user's voice pitch (0 to 2)
    */
   private async handleSetVoicePitch(context: CommandContext, args: string[]): Promise<CommandResult> {
     if (args.length === 0) {
-      return { success: false, error: 'Usage: ~setvoicepitch <-10 to +10>' };
+      return { success: false, error: 'Usage: ~setvoicepitch <0 to 2>' };
     }
 
     const pitch = parseFloat(args[0]);
-    if (isNaN(pitch) || pitch < -10 || pitch > 10) {
-      return { success: false, error: 'Pitch must be between -10 and +10' };
+    if (isNaN(pitch) || pitch < 0 || pitch > 2) {
+      return { success: false, error: 'Pitch must be between 0 and 2' };
     }
 
     const db = getDatabase();
@@ -552,7 +565,12 @@ export class CommandProcessor {
    * ~clearqueue - Clear the TTS queue
    */
   private async handleClearQueue(context: CommandContext, args: string[]): Promise<CommandResult> {
-    // This will be handled by sending an IPC event to the renderer
+    // Send IPC event to renderer to clear queue
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow) {
+      mainWindow.webContents.send('tts:clearQueue');
+    }
     return {
       success: true,
       response: 'TTS queue has been cleared'

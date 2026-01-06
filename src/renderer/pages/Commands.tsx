@@ -35,7 +35,7 @@ const Commands: React.FC = () => {
       name: 'setvoicepitch',
       permission: 'Viewer',
       description: 'Set your voice pitch',
-      usage: '~setvoicepitch <-10 to +10>',
+      usage: '~setvoicepitch <0 to 2>',
       rateLimit: 5
     },
     {

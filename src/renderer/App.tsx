@@ -36,7 +36,7 @@ const App: React.FC = () => {
     loadTTSSettings();
 
     // Listen for new messages at app level
-    const unsubscribe = window.api.on('twitch:message', (message: ChatMessage) => {
+    const unsubscribeMessages = window.api.on('twitch:message', (message: ChatMessage) => {
       setMessages(prev => {
         const newMessages = [...prev, message];
         // Keep only last 500 messages in memory
@@ -50,8 +50,15 @@ const App: React.FC = () => {
       processMessageForTTS(message);
     });
 
+    // Listen for clear queue command from chat
+    const unsubscribeClearQueue = window.api.on('tts:clearQueue', () => {
+      console.log('Clearing TTS queue from command');
+      ttsQueue.clear();
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeMessages();
+      unsubscribeClearQueue();
     };
   }, []);
 
