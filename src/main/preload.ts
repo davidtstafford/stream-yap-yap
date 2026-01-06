@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('api', {
+const api = {
   // General IPC
   invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
   
@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on(channel, subscription);
     return () => ipcRenderer.removeListener(channel, subscription);
   }
-});
+};
+
+contextBridge.exposeInMainWorld('api', api);
+contextBridge.exposeInMainWorld('electron', api); // Alias for compatibility

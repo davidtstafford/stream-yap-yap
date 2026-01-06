@@ -106,6 +106,18 @@ export class CommandProcessor {
       rateLimit: 0
     });
 
+    this.commands.set('uncooldownvoice', {
+      name: 'uncooldownvoice',
+      permission: 'moderator',
+      handler: this.handleUncooldownVoice.bind(this),
+      rateLimit: 0
+    });
+    this.commands.set('uncooldownvoice', {
+      name: 'uncooldownvoice',
+      permission: 'moderator',
+      handler: this.handleUncooldownVoice.bind(this),
+      rateLimit: 0
+    });
     this.commands.set('mutetts', {
       name: 'mutetts',
       permission: 'moderator',
@@ -420,13 +432,45 @@ export class CommandProcessor {
       UPDATE viewer_tts_restrictions 
       SET is_muted = 0, 
           mute_expires_at = NULL,
+          has_cooldown = 0,
+          cooldown_expires_at = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE viewer_id = ?
     `).run(viewer.id);
 
     return {
       success: true,
-      response: `@${targetUsername} has been unmuted from TTS`
+      response: `@${targetUsername} has been unmuted and uncooldown'd from TTS`
+    };
+  }
+
+  /**
+   * ~uncooldownvoice @username - Remove TTS cooldown
+   */
+  private async handleUncooldownVoice(context: CommandContext, args: string[]): Promise<CommandResult> {
+    if (args.length < 1) {
+      return { success: false, error: 'Usage: ~uncooldownvoice @username' };
+    }
+
+    const targetUsername = args[0].replace('@', '').toLowerCase();
+    
+    const viewer = DatabaseService.getViewerByUsername(targetUsername);
+    if (!viewer) {
+      return { success: false, error: `User ${targetUsername} not found` };
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE viewer_tts_restrictions 
+      SET has_cooldown = 0,
+          cooldown_expires_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE viewer_id = ?
+    `).run(viewer.id);
+
+    return {
+      success: true,
+      response: `@${targetUsername} TTS cooldown has been removed`
     };
   }
 

@@ -140,7 +140,9 @@ ipcMain.handle('db:getViewers', async () => {
 });
 
 ipcMain.handle('db:getChatHistory', async (_event, limit?: number, offset?: number) => {
-  return DatabaseService.getChatHistory(limit, offset);
+  const messages = DatabaseService.getChatHistory(limit, offset);
+  console.log(`getChatHistory called: returning ${messages.length} messages`);
+  return messages;
 });
 
 ipcMain.handle('db:searchChatHistory', async (_event, searchTerm: string, limit?: number) => {
@@ -150,6 +152,13 @@ ipcMain.handle('db:searchChatHistory', async (_event, searchTerm: string, limit?
 ipcMain.handle('db:clearChatHistory', async () => {
   DatabaseService.clearChatHistory();
   return true;
+});
+
+ipcMain.handle('db:getChatHistoryCount', async () => {
+  const db = getDatabase();
+  const result = db.prepare('SELECT COUNT(*) as count FROM chat_messages').get() as { count: number };
+  console.log(`Total messages in database: ${result.count}`);
+  return result.count;
 });
 
 ipcMain.handle('db:getAvailableVoices', async (_event, provider?: string) => {

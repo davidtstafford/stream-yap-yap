@@ -97,14 +97,34 @@ const App: React.FC = () => {
         }
 
         // Check cooldown
-        if (restrictions.has_cooldown && restrictions.last_tts_at) {
-          const lastTTS = new Date(restrictions.last_tts_at);
-          const cooldownSeconds = restrictions.cooldown_gap_seconds || 0;
-          const timeSinceLastTTS = (Date.now() - lastTTS.getTime()) / 1000;
-          
-          if (timeSinceLastTTS < cooldownSeconds) {
-            console.log(`${message.username} is on cooldown for ${cooldownSeconds - timeSinceLastTTS}s more`);
-            return;
+        if (restrictions.has_cooldown) {
+          // Check if cooldown period has expired
+          if (restrictions.cooldown_expires_at) {
+            const expiresAt = new Date(restrictions.cooldown_expires_at);
+            if (expiresAt <= new Date()) {
+              console.log(`${message.username}'s cooldown period has expired`);
+              // Cooldown period expired, allow TTS
+            } else if (restrictions.last_tts_at) {
+              // Within cooldown period, check gap
+              const lastTTS = new Date(restrictions.last_tts_at);
+              const cooldownSeconds = restrictions.cooldown_gap_seconds || 0;
+              const timeSinceLastTTS = (Date.now() - lastTTS.getTime()) / 1000;
+              
+              if (timeSinceLastTTS < cooldownSeconds) {
+                console.log(`${message.username} is on cooldown for ${cooldownSeconds - timeSinceLastTTS}s more`);
+                return;
+              }
+            }
+          } else if (restrictions.last_tts_at) {
+            // Permanent cooldown (no expiration)
+            const lastTTS = new Date(restrictions.last_tts_at);
+            const cooldownSeconds = restrictions.cooldown_gap_seconds || 0;
+            const timeSinceLastTTS = (Date.now() - lastTTS.getTime()) / 1000;
+            
+            if (timeSinceLastTTS < cooldownSeconds) {
+              console.log(`${message.username} is on cooldown for ${cooldownSeconds - timeSinceLastTTS}s more`);
+              return;
+            }
           }
         }
       }

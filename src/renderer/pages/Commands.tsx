@@ -67,6 +67,13 @@ const Commands: React.FC = () => {
       rateLimit: 0
     },
     {
+      name: 'uncooldownvoice',
+      permission: 'Moderator',
+      description: 'Remove TTS cooldown from a user',
+      usage: '~uncooldownvoice @username',
+      rateLimit: 0
+    },
+    {
       name: 'mutetts',
       permission: 'Moderator',
       description: 'Disable all TTS globally',
@@ -244,7 +251,9 @@ const Commands: React.FC = () => {
           <li><code>~setvoicepitch 5</code> - Increase pitch by 5</li>
           <li><code>~setvoicespeed 1.5</code> - Speed up voice to 1.5x</li>
           <li><code>~mutevoice @trolluser 30</code> - Mute user for 30 minutes</li>
+          <li><code>~unmutevoice @trolluser</code> - Unmute user (also removes cooldown)</li>
           <li><code>~cooldownvoice @spammer 60 15</code> - 60s cooldown for 15 minutes</li>
+          <li><code>~uncooldownvoice @spammer</code> - Remove cooldown</li>
         </ul>
       </div>
     </div>
