@@ -257,6 +257,8 @@ const Viewers: React.FC = () => {
           padding: 2rem;
           max-width: 1400px;
           margin: 0 auto;
+          background-color: #1a1a1a;
+          min-height: 100vh;
         }
 
         .viewers-header {
@@ -269,6 +271,7 @@ const Viewers: React.FC = () => {
         .viewers-header h1 {
           margin: 0;
           font-size: 2rem;
+          color: #fff;
         }
 
         .refresh-btn {
@@ -295,10 +298,12 @@ const Viewers: React.FC = () => {
         .search-input {
           padding: 0.75rem;
           font-size: 1rem;
-          border: 1px solid #ccc;
+          border: 1px solid #444;
           border-radius: 4px;
           width: 100%;
           max-width: 400px;
+          background: #2a2a2a;
+          color: #fff;
         }
 
         .filter-buttons {
@@ -309,15 +314,16 @@ const Viewers: React.FC = () => {
 
         .filter-buttons button {
           padding: 0.5rem 1rem;
-          background: #f0f0f0;
-          border: 1px solid #ccc;
+          background: #2a2a2a;
+          border: 1px solid #444;
           border-radius: 4px;
           cursor: pointer;
           font-size: 0.9rem;
+          color: #fff;
         }
 
         .filter-buttons button:hover {
-          background: #e0e0e0;
+          background: #3a3a3a;
         }
 
         .filter-buttons button.active {
@@ -328,40 +334,44 @@ const Viewers: React.FC = () => {
 
         .viewers-stats {
           margin-bottom: 1rem;
-          color: #666;
+          color: #aaa;
           font-size: 0.9rem;
         }
 
         .viewers-table-container {
           overflow-x: auto;
-          border: 1px solid #e0e0e0;
+          border: 1px solid #444;
           border-radius: 8px;
+          background: #2a2a2a;
         }
 
         .viewers-table {
           width: 100%;
           border-collapse: collapse;
-          background: white;
+          background: #2a2a2a;
+          color: #fff;
         }
 
         .viewers-table thead {
-          background: #f8f8f8;
+          background: #1a1a1a;
         }
 
         .viewers-table th {
           text-align: left;
           padding: 1rem;
           font-weight: 600;
-          border-bottom: 2px solid #e0e0e0;
+          border-bottom: 2px solid #444;
+          color: #fff;
         }
 
         .viewers-table td {
           padding: 1rem;
-          border-bottom: 1px solid #f0f0f0;
+          border-bottom: 1px solid #333;
+          color: #fff;
         }
 
         .viewers-table tbody tr:hover {
-          background: #f8f8f8;
+          background: #333;
         }
 
         .viewer-name {
@@ -375,7 +385,7 @@ const Viewers: React.FC = () => {
 
         .username-small {
           font-size: 0.85rem;
-          color: #666;
+          color: #999;
         }
 
         .badges {
@@ -420,7 +430,7 @@ const Viewers: React.FC = () => {
         }
 
         .date-cell {
-          color: #666;
+          color: #aaa;
           font-size: 0.9rem;
         }
 
@@ -428,7 +438,7 @@ const Viewers: React.FC = () => {
           text-align: center;
           padding: 3rem;
           font-size: 1.2rem;
-          color: #666;
+          color: #aaa;
         }
 
         .error {

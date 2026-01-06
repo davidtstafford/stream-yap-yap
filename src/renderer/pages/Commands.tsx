@@ -103,15 +103,15 @@ const Commands: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>Chat Commands</h1>
+    <div style={{ padding: '20px', backgroundColor: '#1a1a1a', minHeight: '100vh' }}>
+      <h1 style={{ color: '#fff' }}>Chat Commands</h1>
 
       <div style={{
         padding: '15px',
-        backgroundColor: '#e7f3ff',
+        backgroundColor: '#2a4a6a',
         borderRadius: '8px',
         marginBottom: '20px',
-        color: '#004085'
+        color: '#a8d8ff'
       }}>
         <strong>ℹ️ Command Prefix:</strong> All commands use the <code>~</code> prefix (e.g., <code>~hello</code>)
         <br />
@@ -128,15 +128,15 @@ const Commands: React.FC = () => {
           <div
             key={cmd.name}
             style={{
-              border: '1px solid #dee2e6',
+              border: '1px solid #444',
               borderRadius: '8px',
               padding: '15px',
-              backgroundColor: '#fff'
+              backgroundColor: '#2a2a2a'
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#333' }}>
-                <code style={{ backgroundColor: '#f8f9fa', padding: '4px 8px', borderRadius: '4px' }}>
+              <h3 style={{ margin: 0, color: '#fff' }}>
+                <code style={{ backgroundColor: '#1a1a1a', padding: '4px 8px', borderRadius: '4px', color: '#9147ff' }}>
                   {cmd.usage}
                 </code>
               </h3>
@@ -154,17 +154,17 @@ const Commands: React.FC = () => {
               </span>
             </div>
 
-            <p style={{ color: '#666', margin: '10px 0' }}>
+            <p style={{ color: '#ccc', margin: '10px 0' }}>
               {cmd.description}
             </p>
 
             {cmd.rateLimit > 0 && (
               <div style={{
                 fontSize: '12px',
-                color: '#6c757d',
+                color: '#999',
                 marginTop: '10px',
                 paddingTop: '10px',
-                borderTop: '1px solid #dee2e6'
+                borderTop: '1px solid #444'
               }}>
                 ⏱️ Rate limit: {cmd.rateLimit}s per user
               </div>
@@ -210,7 +210,7 @@ const Commands: React.FC = () => {
             }}>
               Moderator
             </span>
-            <span>Only moderators and the broadcaster can use these commands</span>
+            <span style={{ color: '#ccc' }}>Only moderators and the broadcaster can use these commands</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{
@@ -225,7 +225,7 @@ const Commands: React.FC = () => {
             }}>
               Broadcaster
             </span>
-            <span>Only the broadcaster can use these commands</span>
+            <span style={{ color: '#ccc' }}>Only the broadcaster can use these commands</span>
           </div>
         </div>
       </div>
@@ -233,10 +233,10 @@ const Commands: React.FC = () => {
       <div style={{
         marginTop: '20px',
         padding: '20px',
-        backgroundColor: '#fff3cd',
+        backgroundColor: '#3a3520',
         borderRadius: '8px',
         border: '1px solid #ffc107',
-        color: '#856404'
+        color: '#ffd54f'
       }}>
         <strong>💡 Examples:</strong>
         <ul style={{ marginTop: '10px', marginBottom: 0 }}>
