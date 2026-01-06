@@ -1,5 +1,6 @@
 import tmi from 'tmi.js';
 import { DatabaseService, ChatMessage, Viewer } from '../database/service';
+import { CommandProcessor, CommandContext } from '../commands/commandProcessor';
 
 interface TwitchServiceConfig {
   username: string;
@@ -13,8 +14,12 @@ export class TwitchService {
   private batchInterval: NodeJS.Timeout | null = null;
   private onMessageCallback?: (message: ChatMessage) => void;
   private onConnectionStatusCallback?: (connected: boolean, error?: string) => void;
+  private onCommandResponseCallback?: (response: string) => void;
+  private commandProcessor: CommandProcessor;
 
   constructor() {
+    this.commandProcessor = new CommandProcessor();
+    
     // Batch write messages every 5 seconds
     this.batchInterval = setInterval(() => {
       this.flushMessageQueue();
@@ -118,10 +123,18 @@ export class TwitchService {
   /**
    * Handle incoming chat message
    */
-  private handleMessage(channel: string, userstate: tmi.ChatUserstate, message: string): void {
+  private async handleMessage(channel: string, userstate: tmi.ChatUserstate, message: string): Promise<void> {
     const userId = userstate['user-id'];
     const username = userstate.username;
     const displayName = userstate['display-name'];
+
+    if (!userId || !username) return;
+
+    // Check if message is a command
+    if (message.trim().startsWith('~')) {
+      await this.handleCommand(channel, userstate, message);
+      return; // Don't process commands as regular messages
+    }
 
     if (!userId || !username) return;
 
@@ -158,6 +171,65 @@ export class TwitchService {
   }
 
   /**
+   * Handle chat command
+   */
+  private async handleCommand(channel: string, userstate: tmi.ChatUserstate, message: string): Promise<void> {
+    const userId = userstate['user-id'];
+    const username = userstate.username;
+    const displayName = userstate['display-name'];
+
+    if (!userId || !username) return;
+
+    // Get broadcaster username from channel (remove #)
+    const broadcasterUsername = channel.replace('#', '');
+    
+    // Build command context
+    const context: CommandContext = {
+      username: username.toLowerCase(),
+      displayName: displayName || username,
+      viewerId: userId,
+      isModerator: userstate.mod || false,
+      isBroadcaster: username.toLowerCase() === broadcasterUsername.toLowerCase(),
+      isVip: userstate.badges?.vip === '1',
+      isSubscriber: userstate.subscriber || false,
+      message,
+      channel: broadcasterUsername
+    };
+
+    // Process command
+    const result = await this.commandProcessor.processMessage(context);
+    
+    if (result) {
+      if (result.success && result.response) {
+        // Send response to chat
+        this.say(channel, result.response);
+      } else if (!result.success && result.error) {
+        // Send error as whisper or chat (for now, chat)
+        this.say(channel, `@${displayName} ${result.error}`);
+      }
+
+      // Notify callback
+      if (result.response) {
+        this.onCommandResponseCallback?.(result.response);
+      }
+    }
+  }
+
+  /**
+   * Send message to chat
+   */
+  say(channel: string, message: string): void {
+    if (!this.client) return;
+    
+    // Ensure channel starts with #
+    const channelName = channel.startsWith('#') ? channel : `#${channel}`;
+    
+    this.client.say(channelName, message).catch(err => {
+      console.error('Error sending message:', err);
+    });
+  }
+
+  /**
    * Flush message queue to database
    */
   private flushMessageQueue(): void {
@@ -188,6 +260,13 @@ export class TwitchService {
    */
   onConnectionStatus(callback: (connected: boolean, error?: string) => void): void {
     this.onConnectionStatusCallback = callback;
+  }
+
+  /**
+   * Set callback for command responses
+   */
+  onCommandResponse(callback: (response: string) => void): void {
+    this.onCommandResponseCallback = callback;
   }
 
   /**
