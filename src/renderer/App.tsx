@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './styles/App.css';
 import { getTTSQueue } from './services/ttsQueue';
+import { getTTSRulesService } from './services/ttsRules';
 
 // Page components (we'll create these)
 import Connection from './pages/Connection';
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const processedMessagesRef = useRef(new Set<string>());
   const ttsQueue = getTTSQueue();
+  const ttsRules = getTTSRulesService();
 
   useEffect(() => {
     // Load TTS settings
@@ -74,6 +76,13 @@ const App: React.FC = () => {
       const globalEnabled = await window.api.invoke('db:getSetting', 'tts_enabled');
       if (globalEnabled === 'false') {
         console.log('TTS is globally muted');
+        return;
+      }
+
+      // Apply TTS rules to filter/process message
+      const processed = await ttsRules.processMessage(message);
+      if (!processed.shouldSpeak) {
+        console.log(`Message filtered: ${processed.reason}`);
         return;
       }
 
@@ -142,10 +151,10 @@ const App: React.FC = () => {
       const pitch = voicePrefs?.pitch || (defaultPitch ? parseFloat(defaultPitch) : 1.0);
       const volume = voicePrefs?.volume || (defaultVolume ? parseFloat(defaultVolume) : 1.0);
       
-      // Add to TTS queue
+      // Add to TTS queue with processed text (already includes username if configured)
       ttsQueue.add({
         id: `msg-${message.viewer_id}-${Date.now()}`,
-        text: `${message.display_name || message.username} says: ${message.message}`,
+        text: processed.text,
         voiceId: voiceId || undefined,
         provider: voicePrefs?.provider || 'webspeech',
         speed,

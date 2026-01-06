@@ -21,6 +21,33 @@ const TTS: React.FC = () => {
   const [obsUrl, setObsUrl] = useState('');
   const [muteInApp, setMuteInApp] = useState(false);
 
+  // TTS Rules state
+  const [filterCommands, setFilterCommands] = useState(true);
+  const [filterUrls, setFilterUrls] = useState(true);
+  const [filterBots, setFilterBots] = useState(true);
+  const [botList, setBotList] = useState('Nightbot,StreamElements,Streamlabs,Moobot,Fossabot,Wizebot');
+  const [announceUsername, setAnnounceUsername] = useState(true);
+  const [usernameStyle, setUsernameStyle] = useState('says');
+  const [minLength, setMinLength] = useState(1);
+  const [maxLength, setMaxLength] = useState(500);
+  const [skipDuplicates, setSkipDuplicates] = useState(false);
+  const [duplicateWindow, setDuplicateWindow] = useState(60);
+  const [userCooldown, setUserCooldown] = useState(false);
+  const [userCooldownSeconds, setUserCooldownSeconds] = useState(30);
+  const [globalCooldown, setGlobalCooldown] = useState(false);
+  const [globalCooldownSeconds, setGlobalCooldownSeconds] = useState(5);
+  const [limitEmotes, setLimitEmotes] = useState(false);
+  const [maxEmotes, setMaxEmotes] = useState(5);
+  const [limitEmojis, setLimitEmojis] = useState(false);
+  const [maxEmojis, setMaxEmojis] = useState(5);
+  const [limitRepeatedChars, setLimitRepeatedChars] = useState(false);
+  const [maxRepeatedChars, setMaxRepeatedChars] = useState(3);
+  const [limitLongNumbers, setLimitLongNumbers] = useState(false);
+  const [maxNumberLength, setMaxNumberLength] = useState(6);
+  const [blockedWords, setBlockedWords] = useState<string[]>([]);
+  const [newBlockedWord, setNewBlockedWord] = useState('');
+  const [blockedWordReplacement, setBlockedWordReplacement] = useState('[censored]');
+
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
 
@@ -36,6 +63,9 @@ const TTS: React.FC = () => {
     
     // Load mute in-app setting
     loadMuteInAppSetting();
+    
+    // Load TTS rules
+    loadTTSRules();
     
     // Set up queue update listener
     ttsQueue.onQueueUpdate((updatedQueue) => {
@@ -244,6 +274,88 @@ const TTS: React.FC = () => {
     } catch (error) {
       console.error('Failed to toggle mute in-app:', error);
     }
+  };
+
+  const loadTTSRules = async () => {
+    try {
+      const rules = await Promise.all([
+        window.api.invoke('db:getSetting', 'tts_filter_commands'),
+        window.api.invoke('db:getSetting', 'tts_filter_urls'),
+        window.api.invoke('db:getSetting', 'tts_filter_bots'),
+        window.api.invoke('db:getSetting', 'tts_bot_list'),
+        window.api.invoke('db:getSetting', 'tts_announce_username'),
+        window.api.invoke('db:getSetting', 'tts_username_style'),
+        window.api.invoke('db:getSetting', 'tts_min_length'),
+        window.api.invoke('db:getSetting', 'tts_max_length'),
+        window.api.invoke('db:getSetting', 'tts_skip_duplicates'),
+        window.api.invoke('db:getSetting', 'tts_duplicate_window'),
+        window.api.invoke('db:getSetting', 'tts_user_cooldown'),
+        window.api.invoke('db:getSetting', 'tts_user_cooldown_seconds'),
+        window.api.invoke('db:getSetting', 'tts_global_cooldown'),
+        window.api.invoke('db:getSetting', 'tts_global_cooldown_seconds'),
+        window.api.invoke('db:getSetting', 'tts_limit_emotes'),
+        window.api.invoke('db:getSetting', 'tts_max_emotes'),
+        window.api.invoke('db:getSetting', 'tts_limit_emojis'),
+        window.api.invoke('db:getSetting', 'tts_max_emojis'),
+        window.api.invoke('db:getSetting', 'tts_limit_repeated_chars'),
+        window.api.invoke('db:getSetting', 'tts_max_repeated_chars'),
+        window.api.invoke('db:getSetting', 'tts_limit_long_numbers'),
+        window.api.invoke('db:getSetting', 'tts_max_number_length'),
+        window.api.invoke('db:getSetting', 'tts_blocked_words'),
+        window.api.invoke('db:getSetting', 'tts_blocked_word_replacement')
+      ]);
+
+      if (rules[0]) setFilterCommands(rules[0] === 'true');
+      if (rules[1]) setFilterUrls(rules[1] === 'true');
+      if (rules[2]) setFilterBots(rules[2] === 'true');
+      if (rules[3]) setBotList(rules[3]);
+      if (rules[4]) setAnnounceUsername(rules[4] === 'true');
+      if (rules[5]) setUsernameStyle(rules[5]);
+      if (rules[6]) setMinLength(parseInt(rules[6]));
+      if (rules[7]) setMaxLength(parseInt(rules[7]));
+      if (rules[8]) setSkipDuplicates(rules[8] === 'true');
+      if (rules[9]) setDuplicateWindow(parseInt(rules[9]));
+      if (rules[10]) setUserCooldown(rules[10] === 'true');
+      if (rules[11]) setUserCooldownSeconds(parseInt(rules[11]));
+      if (rules[12]) setGlobalCooldown(rules[12] === 'true');
+      if (rules[13]) setGlobalCooldownSeconds(parseInt(rules[13]));
+      if (rules[14]) setLimitEmotes(rules[14] === 'true');
+      if (rules[15]) setMaxEmotes(parseInt(rules[15]));
+      if (rules[16]) setLimitEmojis(rules[16] === 'true');
+      if (rules[17]) setMaxEmojis(parseInt(rules[17]));
+      if (rules[18]) setLimitRepeatedChars(rules[18] === 'true');
+      if (rules[19]) setMaxRepeatedChars(parseInt(rules[19]));
+      if (rules[20]) setLimitLongNumbers(rules[20] === 'true');
+      if (rules[21]) setMaxNumberLength(parseInt(rules[21]));
+      if (rules[22]) setBlockedWords(rules[22] ? rules[22].split(',').filter((w: string) => w.trim()) : []);
+      if (rules[23]) setBlockedWordReplacement(rules[23] || '[censored]');
+    } catch (error) {
+      console.error('Failed to load TTS rules:', error);
+    }
+  };
+
+  const saveTTSRule = async (key: string, value: string | boolean | number) => {
+    try {
+      await window.api.invoke('db:setSetting', key, String(value));
+    } catch (error) {
+      console.error(`Failed to save TTS rule ${key}:`, error);
+    }
+  };
+
+  const handleAddBlockedWord = () => {
+    const word = newBlockedWord.trim().toLowerCase();
+    if (word && !blockedWords.includes(word)) {
+      const updated = [...blockedWords, word];
+      setBlockedWords(updated);
+      saveTTSRule('tts_blocked_words', updated.join(','));
+      setNewBlockedWord('');
+    }
+  };
+
+  const handleRemoveBlockedWord = (word: string) => {
+    const updated = blockedWords.filter(w => w !== word);
+    setBlockedWords(updated);
+    saveTTSRule('tts_blocked_words', updated.join(','));
   };
 
   const renderTabContent = () => {
@@ -537,10 +649,479 @@ const TTS: React.FC = () => {
   );
 
   const renderRulesTab = () => (
-    <div className="card">
-      <h3>TTS Rules</h3>
-      <p style={{ color: '#888' }}>Coming soon...</p>
-    </div>
+    <>
+      {/* Message Filtering */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Message Filtering</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filterCommands}
+            onChange={(e) => {
+              setFilterCommands(e.target.checked);
+              saveTTSRule('tts_filter_commands', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Filter out commands (starting with ~ or !)</span>
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filterUrls}
+            onChange={(e) => {
+              setFilterUrls(e.target.checked);
+              saveTTSRule('tts_filter_urls', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Filter out URLs</span>
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filterBots}
+            onChange={(e) => {
+              setFilterBots(e.target.checked);
+              saveTTSRule('tts_filter_bots', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Filter out bots</span>
+        </label>
+
+        {filterBots && (
+          <div style={{ marginLeft: '30px', marginTop: '10px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Bot usernames (comma separated):
+            </label>
+            <input
+              type="text"
+              value={botList}
+              onChange={(e) => {
+                setBotList(e.target.value);
+                saveTTSRule('tts_bot_list', e.target.value);
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Username Announcement */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Username Announcement</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={announceUsername}
+            onChange={(e) => {
+              setAnnounceUsername(e.target.checked);
+              saveTTSRule('tts_announce_username', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Announce username before message</span>
+        </label>
+
+        {announceUsername && (
+          <div style={{ marginLeft: '30px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Announcement style:
+            </label>
+            <select
+              value={usernameStyle}
+              onChange={(e) => {
+                setUsernameStyle(e.target.value);
+                saveTTSRule('tts_username_style', e.target.value);
+              }}
+              style={{ width: '100%' }}
+            >
+              <option value="says">Username says: message</option>
+              <option value="from">From Username: message</option>
+              <option value="colon">Username: message</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Message Length Limits */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Message Length Limits</h3>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px' }}>
+            Min length: {minLength} characters
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="50"
+            value={minLength}
+            onChange={(e) => {
+              setMinLength(parseInt(e.target.value));
+              saveTTSRule('tts_min_length', parseInt(e.target.value));
+            }}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: '5px' }}>
+            Max length: {maxLength} characters
+          </label>
+          <input
+            type="range"
+            min="50"
+            max="500"
+            value={maxLength}
+            onChange={(e) => {
+              setMaxLength(parseInt(e.target.value));
+              saveTTSRule('tts_max_length', parseInt(e.target.value));
+            }}
+            style={{ width: '100%' }}
+          />
+        </div>
+      </div>
+
+      {/* Duplicate Detection */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Duplicate Detection</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={skipDuplicates}
+            onChange={(e) => {
+              setSkipDuplicates(e.target.checked);
+              saveTTSRule('tts_skip_duplicates', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Skip duplicate messages</span>
+        </label>
+
+        {skipDuplicates && (
+          <div style={{ marginLeft: '30px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Detection window: {duplicateWindow} seconds
+            </label>
+            <input
+              type="range"
+              min="60"
+              max="600"
+              step="30"
+              value={duplicateWindow}
+              onChange={(e) => {
+                setDuplicateWindow(parseInt(e.target.value));
+                saveTTSRule('tts_duplicate_window', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Rate Limiting & Cooldowns */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Rate Limiting & Cooldowns</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={userCooldown}
+            onChange={(e) => {
+              setUserCooldown(e.target.checked);
+              saveTTSRule('tts_user_cooldown', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Per-user cooldown</span>
+        </label>
+
+        {userCooldown && (
+          <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Cooldown period: {userCooldownSeconds} seconds
+            </label>
+            <input
+              type="range"
+              min="5"
+              max="300"
+              step="5"
+              value={userCooldownSeconds}
+              onChange={(e) => {
+                setUserCooldownSeconds(parseInt(e.target.value));
+                saveTTSRule('tts_user_cooldown_seconds', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={globalCooldown}
+            onChange={(e) => {
+              setGlobalCooldown(e.target.checked);
+              saveTTSRule('tts_global_cooldown', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Global cooldown</span>
+        </label>
+
+        {globalCooldown && (
+          <div style={{ marginLeft: '30px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Cooldown period: {globalCooldownSeconds} seconds
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="60"
+              value={globalCooldownSeconds}
+              onChange={(e) => {
+                setGlobalCooldownSeconds(parseInt(e.target.value));
+                saveTTSRule('tts_global_cooldown_seconds', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Emote & Emoji Limits */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Emote & Emoji Limits</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={limitEmotes}
+            onChange={(e) => {
+              setLimitEmotes(e.target.checked);
+              saveTTSRule('tts_limit_emotes', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Limit emotes per message</span>
+        </label>
+
+        {limitEmotes && (
+          <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Max emotes: {maxEmotes}
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={maxEmotes}
+              onChange={(e) => {
+                setMaxEmotes(parseInt(e.target.value));
+                saveTTSRule('tts_max_emotes', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={limitEmojis}
+            onChange={(e) => {
+              setLimitEmojis(e.target.checked);
+              saveTTSRule('tts_limit_emojis', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Limit emojis per message</span>
+        </label>
+
+        {limitEmojis && (
+          <div style={{ marginLeft: '30px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Max emojis: {maxEmojis}
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={maxEmojis}
+              onChange={(e) => {
+                setMaxEmojis(parseInt(e.target.value));
+                saveTTSRule('tts_max_emojis', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Character Repetition */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Character Repetition & Numbers</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={limitRepeatedChars}
+            onChange={(e) => {
+              setLimitRepeatedChars(e.target.checked);
+              saveTTSRule('tts_limit_repeated_chars', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Limit repeated characters</span>
+        </label>
+
+        {limitRepeatedChars && (
+          <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Max repetition: {maxRepeatedChars}
+              <span style={{ marginLeft: '10px', color: '#666' }}>
+                (e.g., "heeeeello" → "he{maxRepeatedChars}llo")
+              </span>
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={maxRepeatedChars}
+              onChange={(e) => {
+                setMaxRepeatedChars(parseInt(e.target.value));
+                saveTTSRule('tts_max_repeated_chars', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Long Numbers */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Long Numbers</h3>
+        
+        <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={limitLongNumbers}
+            onChange={(e) => {
+              setLimitLongNumbers(e.target.checked);
+              saveTTSRule('tts_limit_long_numbers', e.target.checked);
+            }}
+            style={{ marginRight: '10px' }}
+          />
+          <span>Limit long numbers</span>
+        </label>
+
+        {limitLongNumbers && (
+          <div style={{ marginLeft: '30px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Max number length: {maxNumberLength} digits
+              <span style={{ marginLeft: '10px', color: '#666' }}>
+                (e.g., "123456789" → "[number]")
+              </span>
+            </label>
+            <input
+              type="range"
+              min="3"
+              max="15"
+              value={maxNumberLength}
+              onChange={(e) => {
+                setMaxNumberLength(parseInt(e.target.value));
+                saveTTSRule('tts_max_number_length', parseInt(e.target.value));
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Blocked Words */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>Blocked Words</h3>
+        <p style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>
+          Messages containing these words will have them replaced (case-insensitive)
+        </p>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+            Replacement text:
+          </label>
+          <input
+            type="text"
+            value={blockedWordReplacement}
+            onChange={(e) => {
+              setBlockedWordReplacement(e.target.value);
+              saveTTSRule('tts_blocked_word_replacement', e.target.value);
+            }}
+            placeholder="[censored]"
+            style={{ width: '100%' }}
+          />
+        </div>
+        
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+          <input
+            type="text"
+            placeholder="Enter word to block"
+            value={newBlockedWord}
+            onChange={(e) => setNewBlockedWord(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleAddBlockedWord();
+              }
+            }}
+            style={{ flex: 1 }}
+          />
+          <button onClick={handleAddBlockedWord}>Add</button>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          {blockedWords.map((word) => (
+            <div
+              key={word}
+              style={{
+                padding: '5px 10px',
+                backgroundColor: '#1a1a1a',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span>{word}</span>
+              <button
+                onClick={() => handleRemoveBlockedWord(word)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ff4444',
+                  cursor: 'pointer',
+                  padding: '0',
+                  fontSize: '16px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {blockedWords.length === 0 && (
+          <p style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+            No blocked words configured
+          </p>
+        )}
+      </div>
+    </>
   );
 
   const renderAccessTab = () => (
