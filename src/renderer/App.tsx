@@ -64,6 +64,82 @@ const App: React.FC = () => {
     }
   };
 
+  const checkTTSAccess = async (message: ChatMessage): Promise<boolean> => {
+    try {
+      // Check if access restriction is enabled
+      const accessRestricted = await window.api.invoke('db:getSetting', 'tts_access_restricted');
+      if (accessRestricted !== 'true') {
+        console.log(`[TTS Access] Access not restricted, allowing ${message.username}`);
+        return true; // Access not restricted, everyone can use TTS
+      }
+
+      // Get viewer information
+      const viewer = await window.api.invoke('db:getViewer', message.viewer_id);
+      if (!viewer) {
+        console.log(`[TTS Access] Unknown viewer ${message.username}, denying access`);
+        return false; // Unknown viewer
+      }
+
+      console.log(`[TTS Access] Checking access for ${message.username}:`, {
+        is_subscriber: viewer.is_subscriber,
+        is_vip: viewer.is_vip,
+        is_moderator: viewer.is_moderator
+      });
+
+      // Check allowed groups
+      const [allowSubs, allowVIPs, allowMods, allowRedeems] = await Promise.all([
+        window.api.invoke('db:getSetting', 'tts_access_subscribers'),
+        window.api.invoke('db:getSetting', 'tts_access_vips'),
+        window.api.invoke('db:getSetting', 'tts_access_moderators'),
+        window.api.invoke('db:getSetting', 'tts_access_redeems')
+      ]);
+
+      console.log(`[TTS Access] Allowed groups:`, {
+        subscribers: allowSubs === 'true',
+        vips: allowVIPs === 'true',
+        moderators: allowMods === 'true',
+        redeems: allowRedeems === 'true'
+      });
+
+      // Check subscriber status
+      if (allowSubs === 'true' && viewer.is_subscriber) {
+        console.log(`[TTS Access] ${message.username} granted access (subscriber)`);
+        return true;
+      }
+
+      // Check VIP status
+      if (allowVIPs === 'true' && viewer.is_vip) {
+        console.log(`[TTS Access] ${message.username} granted access (VIP)`);
+        return true;
+      }
+
+      // Check moderator status
+      if (allowMods === 'true' && viewer.is_moderator) {
+        console.log(`[TTS Access] ${message.username} granted access (moderator)`);
+        return true;
+      }
+
+      // Check redeem access
+      if (allowRedeems === 'true') {
+        const activeRedeem = await window.api.invoke('db:query',
+          "SELECT * FROM tts_access_redeems WHERE viewer_id = ? AND is_active = 1 AND expires_at > datetime('now') LIMIT 1",
+          [message.viewer_id]
+        );
+        
+        if (activeRedeem && activeRedeem.length > 0) {
+          console.log(`[TTS Access] ${message.username} granted access (active redeem)`);
+          return true;
+        }
+      }
+
+      console.log(`[TTS Access] ${message.username} DENIED access - no matching criteria`);
+      return false; // No access granted
+    } catch (err) {
+      console.error('Failed to check TTS access:', err);
+      return true; // Default to allowing access on error
+    }
+  };
+
   const processMessageForTTS = async (message: ChatMessage) => {
     const messageKey = `${message.viewer_id}-${message.timestamp}`;
     if (processedMessagesRef.current.has(messageKey)) {
@@ -76,6 +152,13 @@ const App: React.FC = () => {
       const globalEnabled = await window.api.invoke('db:getSetting', 'tts_enabled');
       if (globalEnabled === 'false') {
         console.log('TTS is globally muted');
+        return;
+      }
+
+      // Check if viewer has access to TTS
+      const hasAccess = await checkTTSAccess(message);
+      if (!hasAccess) {
+        console.log(`${message.username} does not have TTS access`);
         return;
       }
 

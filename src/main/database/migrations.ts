@@ -59,7 +59,14 @@ function insertDefaultSettings(): void {
     { key: 'obs_browser_source_enabled', value: 'false' },
     { key: 'obs_browser_source_port', value: '8080' },
     { key: 'mute_in_app_when_obs', value: 'true' },
-    { key: 'auto_connect', value: 'true' }
+    { key: 'auto_connect', value: 'true' },
+    { key: 'tts_access_restricted', value: 'false' },
+    { key: 'tts_access_subscribers', value: 'false' },
+    { key: 'tts_access_vips', value: 'false' },
+    { key: 'tts_access_moderators', value: 'false' },
+    { key: 'tts_access_redeems', value: 'false' },
+    { key: 'tts_redeem_name', value: 'Give Me TTS' },
+    { key: 'tts_redeem_duration', value: '30' }
   ];
   
   const insertStmt = db.prepare(`

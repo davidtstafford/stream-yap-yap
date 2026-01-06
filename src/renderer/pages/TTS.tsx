@@ -48,6 +48,16 @@ const TTS: React.FC = () => {
   const [newBlockedWord, setNewBlockedWord] = useState('');
   const [blockedWordReplacement, setBlockedWordReplacement] = useState('[censored]');
 
+  // TTS Access state
+  const [accessRestricted, setAccessRestricted] = useState(false);
+  const [allowSubscribers, setAllowSubscribers] = useState(false);
+  const [allowVIPs, setAllowVIPs] = useState(false);
+  const [allowModerators, setAllowModerators] = useState(false);
+  const [allowRedeems, setAllowRedeems] = useState(false);
+  const [redeemName, setRedeemName] = useState('Give Me TTS');
+  const [redeemDuration, setRedeemDuration] = useState(30);
+  const [activeRedeems, setActiveRedeems] = useState<any[]>([]);
+
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
 
@@ -66,6 +76,9 @@ const TTS: React.FC = () => {
     
     // Load TTS rules
     loadTTSRules();
+    
+    // Load TTS Access settings
+    loadAccessSettings();
     
     // Set up queue update listener
     ttsQueue.onQueueUpdate((updatedQueue) => {
@@ -1124,10 +1137,296 @@ const TTS: React.FC = () => {
     </>
   );
 
+  const loadAccessSettings = async () => {
+    try {
+      const [restricted, subs, vips, mods, redeems, name, duration] = await Promise.all([
+        window.api.invoke('db:getSetting', 'tts_access_restricted'),
+        window.api.invoke('db:getSetting', 'tts_access_subscribers'),
+        window.api.invoke('db:getSetting', 'tts_access_vips'),
+        window.api.invoke('db:getSetting', 'tts_access_moderators'),
+        window.api.invoke('db:getSetting', 'tts_access_redeems'),
+        window.api.invoke('db:getSetting', 'tts_redeem_name'),
+        window.api.invoke('db:getSetting', 'tts_redeem_duration')
+      ]);
+
+      setAccessRestricted(restricted === 'true');
+      setAllowSubscribers(subs === 'true');
+      setAllowVIPs(vips === 'true');
+      setAllowModerators(mods === 'true');
+      setAllowRedeems(redeems === 'true');
+      setRedeemName(name || 'Give Me TTS');
+      setRedeemDuration(parseInt(duration) || 30);
+      
+      // Load active redeems
+      loadActiveRedeems();
+    } catch (error) {
+      console.error('Failed to load TTS access settings:', error);
+    }
+  };
+
+  const loadActiveRedeems = async () => {
+    try {
+      const redeems = await window.api.invoke('db:query', 
+        'SELECT * FROM tts_access_redeems WHERE is_active = 1 ORDER BY expires_at DESC',
+        []
+      );
+      setActiveRedeems(redeems || []);
+    } catch (error) {
+      console.error('Failed to load active redeems:', error);
+    }
+  };
+
+  const saveAccessSetting = async (key: string, value: string | boolean) => {
+    try {
+      await window.api.invoke('db:setSetting', key, String(value));
+    } catch (error) {
+      console.error(`Failed to save setting ${key}:`, error);
+    }
+  };
+
+  const removeRedeem = async (redeemId: number) => {
+    try {
+      await window.api.invoke('db:execute',
+        'UPDATE tts_access_redeems SET is_active = 0 WHERE id = ?',
+        [redeemId]
+      );
+      await loadActiveRedeems();
+    } catch (error) {
+      console.error('Failed to remove redeem:', error);
+    }
+  };
+
+  const formatTimeRemaining = (expiresAt: string): string => {
+    const now = new Date();
+    const expires = new Date(expiresAt);
+    const diff = expires.getTime() - now.getTime();
+
+    if (diff <= 0) return 'Expired';
+
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    return `${minutes}m`;
+  };
+
+  const formatDateTime = (dateStr: string): string => {
+    return new Date(dateStr).toLocaleString();
+  };
+
   const renderAccessTab = () => (
-    <div className="card">
-      <h3>TTS Access Control</h3>
-      <p style={{ color: '#888' }}>Coming soon...</p>
+    <div>
+      {/* Master Toggle */}
+      <div className="card" style={{ marginBottom: '20px' }}>
+        <h3 style={{ marginBottom: '15px' }}>Master Toggle</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={accessRestricted}
+              onChange={(e) => {
+                setAccessRestricted(e.target.checked);
+                saveAccessSetting('tts_access_restricted', e.target.checked);
+              }}
+            />
+            <span className="slider round"></span>
+          </label>
+          <span style={{ fontWeight: 'bold' }}>
+            {accessRestricted ? 'TTS Access Restricted' : 'Everyone Can Use TTS'}
+          </span>
+        </div>
+        <p style={{ fontSize: '12px', color: '#888', marginTop: '10px' }}>
+          {accessRestricted 
+            ? 'Only selected user groups below can use TTS'
+            : 'All viewers can use TTS (default behavior)'
+          }
+        </p>
+      </div>
+
+      {/* Access Groups */}
+      {accessRestricted && (
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <h3 style={{ marginBottom: '15px' }}>Allowed User Groups</h3>
+          <p style={{ fontSize: '12px', color: '#888', marginBottom: '15px' }}>
+            Select which groups have TTS access. Users meeting any criteria will have access.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            {/* Subscribers */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="checkbox"
+                checked={allowSubscribers}
+                onChange={(e) => {
+                  setAllowSubscribers(e.target.checked);
+                  saveAccessSetting('tts_access_subscribers', e.target.checked);
+                }}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <label style={{ fontSize: '14px' }}>
+                <strong>Subscribers</strong> - Users subscribed to the channel
+              </label>
+            </div>
+
+            {/* VIPs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="checkbox"
+                checked={allowVIPs}
+                onChange={(e) => {
+                  setAllowVIPs(e.target.checked);
+                  saveAccessSetting('tts_access_vips', e.target.checked);
+                }}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <label style={{ fontSize: '14px' }}>
+                <strong>VIPs</strong> - Users with VIP status
+              </label>
+            </div>
+
+            {/* Moderators */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="checkbox"
+                checked={allowModerators}
+                onChange={(e) => {
+                  setAllowModerators(e.target.checked);
+                  saveAccessSetting('tts_access_moderators', e.target.checked);
+                }}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <label style={{ fontSize: '14px' }}>
+                <strong>Moderators</strong> - Channel moderators
+              </label>
+            </div>
+
+            {/* Redeems */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="checkbox"
+                checked={allowRedeems}
+                onChange={(e) => {
+                  setAllowRedeems(e.target.checked);
+                  saveAccessSetting('tts_access_redeems', e.target.checked);
+                }}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <label style={{ fontSize: '14px' }}>
+                <strong>Channel Point Redeems</strong> - Users who redeem access
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Redeem Configuration */}
+      {accessRestricted && allowRedeems && (
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <h3 style={{ marginBottom: '15px' }}>Channel Point Redeem Configuration</h3>
+          <p style={{ fontSize: '12px', color: '#888', marginBottom: '15px' }}>
+            Users who redeem this channel point reward will get TTS access for the specified duration.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                Redeem Name:
+              </label>
+              <input
+                type="text"
+                value={redeemName}
+                onChange={(e) => setRedeemName(e.target.value)}
+                onBlur={() => saveAccessSetting('tts_redeem_name', redeemName)}
+                placeholder="Give Me TTS"
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                Duration (minutes):
+              </label>
+              <input
+                type="number"
+                value={redeemDuration}
+                onChange={(e) => setRedeemDuration(parseInt(e.target.value) || 0)}
+                onBlur={() => saveAccessSetting('tts_redeem_duration', String(redeemDuration))}
+                min="1"
+                max="1440"
+                style={{ width: '150px' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginTop: '15px', padding: '10px', backgroundColor: 'rgba(255,193,7,0.1)', borderRadius: '4px' }}>
+            <p style={{ fontSize: '12px', color: '#ffc107', margin: 0 }}>
+              ⚠️ <strong>Note:</strong> You need to set up an EventSub listener to automatically grant access when users redeem. 
+              This feature requires channel point redeem integration (Phase 10+).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Active Redeems Table */}
+      {accessRestricted && allowRedeems && (
+        <div className="card">
+          <h3 style={{ marginBottom: '15px' }}>Active Channel Point Redeems</h3>
+          
+          {activeRedeems.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', padding: '20px' }}>
+              No active redeems. Users will appear here when they redeem TTS access.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #444' }}>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Username</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Redeemed At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Expires At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Time Remaining</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeRedeems.map((redeem) => (
+                    <tr key={redeem.id} style={{ borderBottom: '1px solid #333' }}>
+                      <td style={{ padding: '10px', fontSize: '14px' }}>{redeem.username}</td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {formatDateTime(redeem.redeemed_at)}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {formatDateTime(redeem.expires_at)}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '14px', fontWeight: 'bold' }}>
+                        {formatTimeRemaining(redeem.expires_at)}
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <button
+                          onClick={() => removeRedeem(redeem.id)}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: '12px',
+                            backgroundColor: '#d32f2f',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Remove Access
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 

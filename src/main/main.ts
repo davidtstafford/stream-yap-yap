@@ -323,6 +323,31 @@ ipcMain.handle('db:updateLastTTSTime', async (_event, viewerId: string) => {
   return true;
 });
 
+// General database query and execution handlers
+ipcMain.handle('db:query', async (_event, sql: string, params: any[] = []) => {
+  const db = getDatabase();
+  try {
+    return db.prepare(sql).all(...params);
+  } catch (error) {
+    console.error('Database query error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('db:execute', async (_event, sql: string, params: any[] = []) => {
+  const db = getDatabase();
+  try {
+    return db.prepare(sql).run(...params);
+  } catch (error) {
+    console.error('Database execute error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('db:getViewer', async (_event, viewerId: string) => {
+  return DatabaseService.getViewerById(viewerId);
+});
+
 // Test handler
 ipcMain.handle('ping', async () => {
   return 'pong';
