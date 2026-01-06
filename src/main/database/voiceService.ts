@@ -75,6 +75,48 @@ export class VoiceService {
     // In the future, we can use IPC to get voices from renderer
     return [];
   }
+
+  /**
+   * Sync WebSpeech voices from renderer process
+   */
+  static syncWebSpeechVoices(voices: any[]): number {
+    const db = getDatabase();
+    const timestamp = new Date().toISOString();
+    
+    // Mark all existing WebSpeech voices as unavailable
+    db.prepare('UPDATE tts_voices SET is_available = 0 WHERE provider = ?').run('webspeech');
+    
+    const upsertStmt = db.prepare(`
+      INSERT INTO tts_voices (
+        voice_id, name, provider, language_code, language_name, 
+        region, gender, is_available, last_scanned_at
+      )
+      VALUES (?, ?, 'webspeech', ?, ?, ?, ?, 1, ?)
+      ON CONFLICT(voice_id, provider) DO UPDATE SET
+        name = excluded.name,
+        language_code = excluded.language_code,
+        language_name = excluded.language_name,
+        region = excluded.region,
+        gender = excluded.gender,
+        is_available = 1,
+        last_scanned_at = excluded.last_scanned_at
+    `);
+    
+    for (const voice of voices) {
+      upsertStmt.run(
+        voice.voiceURI,
+        voice.name,
+        voice.lang,
+        voice.lang,
+        null,
+        null,
+        timestamp
+      );
+    }
+    
+    console.log(`Voice scan complete: ${voices.length} voices detected`);
+    return voices.length;
+  }
   
   /**
    * Get all available voices, optionally filtered by provider

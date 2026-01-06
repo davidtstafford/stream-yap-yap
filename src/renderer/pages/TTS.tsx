@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { getWebSpeechService, WebSpeechVoice } from '../services/webSpeechService';
 import { getTTSQueue, TTSQueueItem } from '../services/ttsQueue';
 
+type TTSTab = 'main' | 'rules' | 'access' | 'voice-settings' | 'restrictions';
+
 const TTS: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TTSTab>('main');
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [voices, setVoices] = useState<WebSpeechVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string>('');
@@ -12,6 +15,8 @@ const TTS: React.FC = () => {
   const [testText, setTestText] = useState('Hello! This is a test message.');
   const [queue, setQueue] = useState<TTSQueueItem[]>([]);
   const [currentItem, setCurrentItem] = useState<TTSQueueItem | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState<string | null>(null);
 
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
@@ -20,8 +25,8 @@ const TTS: React.FC = () => {
     // Load settings
     loadSettings();
     
-    // Load voices
-    loadVoices();
+    // Load voices (auto-scan if none exist)
+    initVoices();
     
     // Set up queue update listener
     ttsQueue.onQueueUpdate((updatedQueue) => {
@@ -36,6 +41,16 @@ const TTS: React.FC = () => {
       setCurrentItem(null);
     });
   }, []);
+
+  const initVoices = async () => {
+    const loadedVoices = await loadVoices();
+    
+    // If no voices found, auto-scan
+    if (loadedVoices.length === 0) {
+      console.log('No voices found, auto-scanning...');
+      await handleScanVoices();
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -57,15 +72,52 @@ const TTS: React.FC = () => {
 
   const loadVoices = async () => {
     try {
-      const availableVoices = await webSpeechService.getVoices();
-      setVoices(availableVoices);
-      
-      // If no voice selected, select first one
-      if (!selectedVoice && availableVoices.length > 0) {
-        setSelectedVoice(availableVoices[0].voice_id);
+      // Load voices from database (already scanned and stored)
+      const dbVoices = await window.api.invoke('db:getAvailableVoices');
+      if (dbVoices && dbVoices.length > 0) {
+        const voiceList = dbVoices.map((v: any) => ({
+          voice_id: v.voice_id,
+          name: v.name,
+          language_name: v.language_name,
+          provider: v.provider
+        }));
+        setVoices(voiceList);
+        
+        // If no voice selected, select first one
+        if (!selectedVoice && voiceList.length > 0) {
+          setSelectedVoice(voiceList[0].voice_id);
+        }
+        
+        return voiceList;
       }
+      return [];
     } catch (err) {
       console.error('Failed to load voices:', err);
+      return [];
+    }
+  };
+
+  const handleScanVoices = async () => {
+    setIsScanning(true);
+    try {
+      // Get voices from browser's Web Speech API
+      const speechVoices = window.speechSynthesis.getVoices();
+      
+      // Send voices to main process to store in database
+      await window.api.invoke('db:syncWebSpeechVoices', speechVoices.map(v => ({
+        voiceURI: v.voiceURI,
+        name: v.name,
+        lang: v.lang,
+        localService: v.localService,
+        default: v.default
+      })));
+      
+      await loadVoices();
+      setLastScanTime(new Date().toLocaleString());
+    } catch (err) {
+      console.error('Failed to scan voices:', err);
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -122,10 +174,25 @@ const TTS: React.FC = () => {
     ttsQueue.skip();
   };
 
-  return (
-    <div className="page">
-      <h2>Text-to-Speech</h2>
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'main':
+        return renderMainTab();
+      case 'rules':
+        return renderRulesTab();
+      case 'access':
+        return renderAccessTab();
+      case 'voice-settings':
+        return renderVoiceSettingsTab();
+      case 'restrictions':
+        return renderRestrictionsTab();
+      default:
+        return renderMainTab();
+    }
+  };
 
+  const renderMainTab = () => (
+    <>
       {/* TTS Enable/Disable */}
       <div className="card">
         <h3 style={{ marginBottom: '15px' }}>TTS Status</h3>
@@ -140,6 +207,25 @@ const TTS: React.FC = () => {
             {ttsEnabled ? '✅ TTS Enabled' : '❌ TTS Disabled'}
           </span>
         </label>
+      </div>
+
+      {/* Voice Management */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>Voice Management</h3>
+          <button 
+            className="primary" 
+            onClick={handleScanVoices}
+            disabled={isScanning}
+            style={{ fontSize: '14px', padding: '8px 16px' }}
+          >
+            {isScanning ? '⏳ Scanning...' : '🔍 Scan for Voices'}
+          </button>
+        </div>
+        <p style={{ fontSize: '12px', color: '#888', marginBottom: '15px' }}>
+          {voices.length} voices available
+          {lastScanTime && ` • Last scanned: ${lastScanTime}`}
+        </p>
       </div>
 
       {/* Voice Selection */}
@@ -165,13 +251,10 @@ const TTS: React.FC = () => {
           >
             {voices.map((voice) => (
               <option key={voice.voice_id} value={voice.voice_id}>
-                {voice.name} - {voice.language_name}
+                {voice.name} - {voice.language_name} ({voice.provider})
               </option>
             ))}
           </select>
-          <p style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
-            {voices.length} voices available
-          </p>
         </div>
 
         <div style={{ marginBottom: '15px' }}>
@@ -294,6 +377,128 @@ const TTS: React.FC = () => {
           </div>
         )}
       </div>
+    </>
+  );
+
+  const renderRulesTab = () => (
+    <div className="card">
+      <h3>TTS Rules</h3>
+      <p style={{ color: '#888' }}>Coming soon...</p>
+    </div>
+  );
+
+  const renderAccessTab = () => (
+    <div className="card">
+      <h3>TTS Access Control</h3>
+      <p style={{ color: '#888' }}>Coming soon...</p>
+    </div>
+  );
+
+  const renderVoiceSettingsTab = () => (
+    <div className="card">
+      <h3>Viewer Voice Settings</h3>
+      <p style={{ color: '#888' }}>Coming soon...</p>
+    </div>
+  );
+
+  const renderRestrictionsTab = () => (
+    <div className="card">
+      <h3>Viewer TTS Restrictions</h3>
+      <p style={{ color: '#888' }}>Coming soon...</p>
+    </div>
+  );
+
+  return (
+    <div className="page">
+      <h2>Text-to-Speech</h2>
+
+      {/* Tab Navigation */}
+      <div style={{
+        display: 'flex',
+        gap: '10px',
+        marginBottom: '20px',
+        borderBottom: '1px solid #404040',
+        paddingBottom: '10px'
+      }}>
+        <button
+          onClick={() => setActiveTab('main')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: activeTab === 'main' ? '#9147ff' : 'transparent',
+            color: activeTab === 'main' ? 'white' : '#888',
+            border: 'none',
+            borderRadius: '6px 6px 0 0',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: activeTab === 'main' ? 'bold' : 'normal'
+          }}
+        >
+          Main
+        </button>
+        <button
+          onClick={() => setActiveTab('rules')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: activeTab === 'rules' ? '#9147ff' : 'transparent',
+            color: activeTab === 'rules' ? 'white' : '#888',
+            border: 'none',
+            borderRadius: '6px 6px 0 0',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: activeTab === 'rules' ? 'bold' : 'normal'
+          }}
+        >
+          TTS Rules
+        </button>
+        <button
+          onClick={() => setActiveTab('access')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: activeTab === 'access' ? '#9147ff' : 'transparent',
+            color: activeTab === 'access' ? 'white' : '#888',
+            border: 'none',
+            borderRadius: '6px 6px 0 0',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: activeTab === 'access' ? 'bold' : 'normal'
+          }}
+        >
+          TTS Access
+        </button>
+        <button
+          onClick={() => setActiveTab('voice-settings')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: activeTab === 'voice-settings' ? '#9147ff' : 'transparent',
+            color: activeTab === 'voice-settings' ? 'white' : '#888',
+            border: 'none',
+            borderRadius: '6px 6px 0 0',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: activeTab === 'voice-settings' ? 'bold' : 'normal'
+          }}
+        >
+          Voice Settings
+        </button>
+        <button
+          onClick={() => setActiveTab('restrictions')}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: activeTab === 'restrictions' ? '#9147ff' : 'transparent',
+            color: activeTab === 'restrictions' ? 'white' : '#888',
+            border: 'none',
+            borderRadius: '6px 6px 0 0',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: activeTab === 'restrictions' ? 'bold' : 'normal'
+          }}
+        >
+          Restrictions
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {renderTabContent()}
     </div>
   );
 };

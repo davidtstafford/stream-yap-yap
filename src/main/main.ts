@@ -185,6 +185,10 @@ ipcMain.handle('db:scanVoices', async () => {
   return true;
 });
 
+ipcMain.handle('db:syncWebSpeechVoices', async (_event, voices: any[]) => {
+  return VoiceService.syncWebSpeechVoices(voices);
+});
+
 ipcMain.handle('db:isVoiceAvailable', async (_event, voiceId: string, provider: string) => {
   return VoiceService.isVoiceAvailable(voiceId, provider);
 });
