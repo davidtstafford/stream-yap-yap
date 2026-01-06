@@ -68,6 +68,16 @@ const TTS: React.FC = () => {
   const [cooldownViewers, setCooldownViewers] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
 
+  // Voice Settings state
+  const [voiceSettingsSearch, setVoiceSettingsSearch] = useState('');
+  const [voiceSearchResults, setVoiceSearchResults] = useState<any[]>([]);
+  const [selectedViewer, setSelectedViewer] = useState<any | null>(null);
+  const [viewerVoicePreferences, setViewerVoicePreferences] = useState<any[]>([]);
+  const [selectedViewerVoice, setSelectedViewerVoice] = useState('');
+  const [viewerPitch, setViewerPitch] = useState(1.0);
+  const [viewerSpeed, setViewerSpeed] = useState(1.0);
+  const [viewerVolume, setViewerVolume] = useState(1.0);
+
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
 
@@ -92,6 +102,9 @@ const TTS: React.FC = () => {
     
     // Load restrictions
     loadRestrictions();
+
+    // Load viewer voice preferences
+    loadViewerVoicePreferences();
 
     // Poll for restrictions updates every 30 seconds
     const restrictionsInterval = setInterval(() => {
@@ -402,6 +415,21 @@ const TTS: React.FC = () => {
       setCooldownViewers(cooldown || []);
     } catch (error) {
       console.error('Failed to load restrictions:', error);
+    }
+  };
+
+  const loadViewerVoicePreferences = async () => {
+    try {
+      const preferences = await window.api.invoke('db:query',
+        `SELECT p.*, v.username, v.display_name 
+         FROM viewer_voice_preferences p 
+         JOIN viewers v ON p.viewer_id = v.id 
+         ORDER BY v.username ASC`,
+        []
+      );
+      setViewerVoicePreferences(preferences || []);
+    } catch (error) {
+      console.error('Failed to load viewer voice preferences:', error);
     }
   };
 
@@ -1480,12 +1508,369 @@ const TTS: React.FC = () => {
     </div>
   );
 
-  const renderVoiceSettingsTab = () => (
-    <div className="card">
-      <h3>Viewer Voice Settings</h3>
-      <p style={{ color: '#888' }}>Coming soon...</p>
-    </div>
-  );
+  const renderVoiceSettingsTab = () => {
+    const searchVoiceViewers = async () => {
+      if (!voiceSettingsSearch.trim()) {
+        setVoiceSearchResults([]);
+        return;
+      }
+      
+      try {
+        const viewers = await window.api.invoke('db:getViewers');
+        const filtered = viewers.filter((v: any) => 
+          v.username.toLowerCase().includes(voiceSettingsSearch.toLowerCase()) ||
+          v.display_name?.toLowerCase().includes(voiceSettingsSearch.toLowerCase())
+        ).slice(0, 10);
+        setVoiceSearchResults(filtered);
+      } catch (error) {
+        console.error('Failed to search viewers:', error);
+      }
+    };
+
+    const selectViewer = async (viewer: any) => {
+      setSelectedViewer(viewer);
+      setVoiceSearchResults([]);
+      setVoiceSettingsSearch('');
+      
+      // Load existing preference
+      try {
+        const pref = await window.api.invoke('db:getViewerVoicePreference', viewer.id);
+        if (pref) {
+          setSelectedViewerVoice(pref.voice_id);
+          setViewerPitch(pref.pitch || 1.0);
+          setViewerSpeed(pref.speed || 1.0);
+          setViewerVolume(pref.volume || 1.0);
+        } else {
+          // Reset to defaults
+          setSelectedViewerVoice('');
+          setViewerPitch(1.0);
+          setViewerSpeed(1.0);
+          setViewerVolume(1.0);
+        }
+      } catch (error) {
+        console.error('Failed to load viewer preference:', error);
+      }
+    };
+
+    const saveViewerVoice = async () => {
+      if (!selectedViewer || !selectedViewerVoice) return;
+      
+      try {
+        const voice = voices.find(v => v.voice_id === selectedViewerVoice);
+        if (!voice) {
+          alert('Please select a voice');
+          return;
+        }
+
+        await window.api.invoke('db:execute',
+          `INSERT INTO viewer_voice_preferences (viewer_id, voice_id, provider, pitch, speed, volume, updated_at)
+           VALUES (?, ?, 'webspeech', ?, ?, ?, datetime('now'))
+           ON CONFLICT(viewer_id) DO UPDATE SET
+             voice_id = excluded.voice_id,
+             provider = excluded.provider,
+             pitch = excluded.pitch,
+             speed = excluded.speed,
+             volume = excluded.volume,
+             updated_at = excluded.updated_at`,
+          [selectedViewer.id, selectedViewerVoice, viewerPitch, viewerSpeed, viewerVolume]
+        );
+        
+        alert('Voice preference saved!');
+        await loadViewerVoicePreferences();
+        setSelectedViewer(null);
+        setSelectedViewerVoice('');
+      } catch (error) {
+        console.error('Failed to save voice preference:', error);
+        alert('Failed to save voice preference');
+      }
+    };
+
+    const deleteViewerVoice = async (viewerId: string) => {
+      if (!confirm('Remove voice preference for this viewer?')) return;
+      
+      try {
+        await window.api.invoke('db:execute',
+          'DELETE FROM viewer_voice_preferences WHERE viewer_id = ?',
+          [viewerId]
+        );
+        await loadViewerVoicePreferences();
+      } catch (error) {
+        console.error('Failed to delete voice preference:', error);
+      }
+    };
+
+    const testViewerVoice = () => {
+      if (!selectedViewerVoice) {
+        alert('Please select a voice first');
+        return;
+      }
+      
+      const voice = voices.find(v => v.voice_id === selectedViewerVoice);
+      if (voice) {
+        webSpeechService.testVoice(voice.voice_id, 'This is a test of the selected voice.');
+      }
+    };
+
+    return (
+      <div>
+        {/* Viewer Search and Selection */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <h3 style={{ marginBottom: '15px' }}>Set Voice for Viewer</h3>
+          
+          {!selectedViewer ? (
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                Search for viewer:
+              </label>
+              <input
+                type="text"
+                value={voiceSettingsSearch}
+                onChange={(e) => {
+                  setVoiceSettingsSearch(e.target.value);
+                  searchVoiceViewers();
+                }}
+                placeholder="Type username..."
+                style={{ width: '100%' }}
+              />
+              
+              {voiceSearchResults.length > 0 && (
+                <div style={{ 
+                  marginTop: '5px', 
+                  border: '1px solid #444', 
+                  borderRadius: '4px', 
+                  maxHeight: '200px', 
+                  overflowY: 'auto' 
+                }}>
+                  {voiceSearchResults.map(viewer => (
+                    <div
+                      key={viewer.id}
+                      onClick={() => selectViewer(viewer)}
+                      style={{
+                        padding: '8px',
+                        cursor: 'pointer',
+                        borderBottom: '1px solid #333'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      {viewer.display_name || viewer.username}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: 'rgba(145, 71, 255, 0.1)', borderRadius: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong>Configuring voice for:</strong> {selectedViewer.display_name || selectedViewer.username}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedViewer(null);
+                      setSelectedViewerVoice('');
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                      backgroundColor: '#555',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Voice:
+                </label>
+                <select
+                  value={selectedViewerVoice}
+                  onChange={(e) => setSelectedViewerVoice(e.target.value)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">Select a voice...</option>
+                  {voices.map(voice => (
+                    <option key={voice.voice_id} value={voice.voice_id}>
+                      {voice.name} ({voice.language_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Pitch: {viewerPitch.toFixed(1)}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={viewerPitch}
+                  onChange={(e) => setViewerPitch(parseFloat(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Speed: {viewerSpeed.toFixed(1)}x
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={viewerSpeed}
+                  onChange={(e) => setViewerSpeed(parseFloat(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Volume: {Math.round(viewerVolume * 100)}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={viewerVolume}
+                  onChange={(e) => setViewerVolume(parseFloat(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={testViewerVoice}
+                  disabled={!selectedViewerVoice}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: selectedViewerVoice ? '#555' : '#333',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: selectedViewerVoice ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  🔊 Test Voice
+                </button>
+                <button
+                  onClick={saveViewerVoice}
+                  disabled={!selectedViewerVoice}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: selectedViewerVoice ? '#9147ff' : '#555',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: selectedViewerVoice ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  💾 Save
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Existing Voice Preferences Table */}
+        <div className="card">
+          <h3 style={{ marginBottom: '15px' }}>Configured Voice Preferences</h3>
+          
+          {viewerVoicePreferences.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', padding: '20px' }}>
+              No custom voice preferences set
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #444' }}>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Viewer</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Voice</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Pitch</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Speed</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Volume</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewerVoicePreferences.map((pref) => {
+                    const voice = voices.find(v => v.voice_id === pref.voice_id);
+                    return (
+                      <tr key={pref.viewer_id} style={{ borderBottom: '1px solid #333' }}>
+                        <td style={{ padding: '10px', fontSize: '14px' }}>
+                          {pref.display_name || pref.username}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                          {voice ? voice.name : pref.voice_id}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '14px' }}>
+                          {pref.pitch?.toFixed(1) || '1.0'}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '14px' }}>
+                          {pref.speed?.toFixed(1) || '1.0'}x
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '14px' }}>
+                          {Math.round((pref.volume || 1) * 100)}%
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <div style={{ display: 'flex', gap: '5px' }}>
+                            <button
+                              onClick={() => selectViewer({ 
+                                id: pref.viewer_id, 
+                                username: pref.username, 
+                                display_name: pref.display_name 
+                              })}
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: '12px',
+                                backgroundColor: '#555',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteViewerVoice(pref.viewer_id)}
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: '12px',
+                                backgroundColor: '#d32f2f',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderRestrictionsTab = () => {
     const searchViewers = async () => {
