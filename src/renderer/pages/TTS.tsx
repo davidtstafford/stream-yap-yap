@@ -17,6 +17,9 @@ const TTS: React.FC = () => {
   const [currentItem, setCurrentItem] = useState<TTSQueueItem | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
+  const [obsRunning, setObsRunning] = useState(false);
+  const [obsUrl, setObsUrl] = useState('');
+  const [muteInApp, setMuteInApp] = useState(false);
 
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
@@ -27,6 +30,12 @@ const TTS: React.FC = () => {
     
     // Load voices (auto-scan if none exist)
     initVoices();
+
+    // Check OBS server status
+    checkObsStatus();
+    
+    // Load mute in-app setting
+    loadMuteInAppSetting();
     
     // Set up queue update listener
     ttsQueue.onQueueUpdate((updatedQueue) => {
@@ -174,6 +183,69 @@ const TTS: React.FC = () => {
     ttsQueue.skip();
   };
 
+  const checkObsStatus = async () => {
+    try {
+      const status = await window.api.invoke('obs:getStatus');
+      setObsRunning(status.running);
+      setObsUrl(status.url);
+    } catch (err) {
+      console.error('Failed to check OBS status:', err);
+    }
+  };
+
+  const handleStartObs = async () => {
+    try {
+      const result = await window.api.invoke('obs:start');
+      if (result.success) {
+        setObsRunning(true);
+        setObsUrl(result.url);
+      } else {
+        alert(`Failed to start OBS server: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Failed to start OBS server:', err);
+      alert('Failed to start OBS server');
+    }
+  };
+
+  const handleStopObs = async () => {
+    try {
+      const result = await window.api.invoke('obs:stop');
+      if (result.success) {
+        setObsRunning(false);
+      } else {
+        alert(`Failed to stop OBS server: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Failed to stop OBS server:', err);
+      alert('Failed to stop OBS server');
+    }
+  };
+
+  const handleCopyObsUrl = () => {
+    navigator.clipboard.writeText(obsUrl);
+    alert('URL copied to clipboard!');
+  };
+
+  const loadMuteInAppSetting = async () => {
+    try {
+      const val = await window.api.invoke('db:getSetting', 'tts_mute_in_app');
+      setMuteInApp(val === 'true');
+    } catch (error) {
+      console.error('Failed to load mute in-app setting:', error);
+    }
+  };
+
+  const handleMuteInAppToggle = async () => {
+    try {
+      const newValue = !muteInApp;
+      await window.api.invoke('db:setSetting', 'tts_mute_in_app', String(newValue));
+      setMuteInApp(newValue);
+    } catch (error) {
+      console.error('Failed to toggle mute in-app:', error);
+    }
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'main':
@@ -315,6 +387,90 @@ const TTS: React.FC = () => {
         <button className="primary" onClick={handleTestVoice}>
           🔊 Test Voice
         </button>
+      </div>
+
+      {/* OBS Browser Source */}
+      <div className="card">
+        <h3 style={{ marginBottom: '15px' }}>OBS Browser Source</h3>
+        <p style={{ fontSize: '14px', color: '#888', marginBottom: '15px' }}>
+          Use this URL in OBS as a Browser Source to display TTS messages in your stream.
+        </p>
+
+        <div style={{ marginBottom: '15px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+            {obsRunning ? (
+              <button className="secondary" onClick={handleStopObs}>
+                ⏹️ Stop Server
+              </button>
+            ) : (
+              <button className="primary" onClick={handleStartObs}>
+                ▶️ Start Server
+              </button>
+            )}
+          </div>
+
+          {obsRunning && (
+            <>
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'center',
+                marginBottom: '10px'
+              }}>
+                <input
+                  type="text"
+                  value={obsUrl}
+                  readOnly
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    backgroundColor: '#1a1a1a',
+                    color: 'white',
+                    border: '1px solid #505050',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                />
+                <button className="primary" onClick={handleCopyObsUrl}>
+                  📋 Copy URL
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', color: '#00ff00' }}>
+                ✅ Server running • Ready for OBS
+              </div>
+
+              <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#1a1a1a', borderRadius: '6px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={muteInApp}
+                    onChange={handleMuteInAppToggle}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span>🔇 Mute TTS in app when OBS is running</span>
+                </label>
+                <div style={{ fontSize: '12px', color: '#808080', marginTop: '5px', marginLeft: '30px' }}>
+                  When enabled, audio plays only in OBS overlay (prevents echo)
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <details style={{ marginTop: '15px' }}>
+          <summary style={{ cursor: 'pointer', fontSize: '14px', marginBottom: '10px' }}>
+            📖 How to add to OBS
+          </summary>
+          <ol style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.8', paddingLeft: '20px' }}>
+            <li>Click "Start Server" above</li>
+            <li>Copy the URL</li>
+            <li>In OBS, add a new "Browser" source</li>
+            <li>Paste the URL</li>
+            <li>Set Width: 1920, Height: 1080</li>
+            <li>Check "Shutdown source when not visible" for performance</li>
+            <li>Click OK</li>
+          </ol>
+        </details>
       </div>
 
       {/* TTS Queue */}

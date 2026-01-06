@@ -62,12 +62,41 @@ export class TTSQueue {
     this.notifyQueueUpdate();
     this.onItemStartCallback?.(item);
 
+    // Broadcast to OBS overlay
+    try {
+      await window.api.invoke('obs:broadcastEvent', {
+        type: 'start',
+        item: {
+          id: item.id,
+          text: item.text,
+          username: item.username,
+          viewerId: item.viewerId,
+          voiceId: item.voiceId,
+          speed: item.speed,
+          pitch: item.pitch,
+          volume: item.volume
+        }
+      });
+    } catch (err) {
+      console.error('Failed to broadcast to OBS:', err);
+    }
+
     try {
       // Speak the text using WebSpeech API
       await this.speak(item);
       
       item.status = 'completed';
       this.onItemCompleteCallback?.(item);
+
+      // Broadcast completion to OBS overlay
+      try {
+        await window.api.invoke('obs:broadcastEvent', {
+          type: 'complete',
+          item: { id: item.id }
+        });
+      } catch (err) {
+        console.error('Failed to broadcast completion to OBS:', err);
+      }
     } catch (error) {
       item.status = 'error';
       item.error = String(error);
@@ -88,6 +117,21 @@ export class TTSQueue {
    * Speak text using WebSpeech API
    */
   private async speak(item: TTSQueueItem): Promise<void> {
+    // Check if we should mute in-app audio when OBS is running
+    try {
+      const obsStatus = await window.api.invoke('obs:getStatus');
+      const muteInApp = await window.api.invoke('db:getSetting', 'tts_mute_in_app');
+      
+      if (obsStatus.running && muteInApp === 'true') {
+        // OBS is handling audio, don't play in app
+        console.log('Skipping in-app audio - OBS overlay is handling playback');
+        return Promise.resolve();
+      }
+    } catch (error) {
+      console.error('Failed to check OBS/mute status:', error);
+      // Continue with playback if check fails
+    }
+
     return new Promise((resolve, reject) => {
       if (!('speechSynthesis' in window)) {
         reject(new Error('WebSpeech API not supported'));

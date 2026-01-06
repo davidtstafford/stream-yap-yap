@@ -7,11 +7,13 @@ import { VoiceService } from './database/voiceService';
 import { getTwitchService } from './twitch/twitchService';
 import { TwitchOAuthService } from './twitch/oauthService';
 import { getTwitchApiService } from './twitch/twitchApiService';
+import { getOBSServer } from './obs/obsServer';
 
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
 const twitchApiService = getTwitchApiService();
 const oauthService = new TwitchOAuthService();
+const obsServer = getOBSServer();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -75,10 +77,20 @@ app.on('ready', () => {
       console.error('Auto-connect failed:', err);
     });
   }
+
+  // Auto-start OBS server if enabled
+  const obsEnabled = DatabaseService.getSetting('obs_server_enabled');
+  if (obsEnabled === 'true') {
+    console.log('Auto-starting OBS server...');
+    obsServer.start().catch(err => {
+      console.error('Failed to start OBS server:', err);
+    });
+  }
 });
 
 app.on('window-all-closed', () => {
   twitchService.destroy();
+  obsServer.stop();
   closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();
@@ -191,6 +203,37 @@ ipcMain.handle('db:syncWebSpeechVoices', async (_event, voices: any[]) => {
 
 ipcMain.handle('db:isVoiceAvailable', async (_event, voiceId: string, provider: string) => {
   return VoiceService.isVoiceAvailable(voiceId, provider);
+});
+
+// OBS Server handlers
+ipcMain.handle('obs:start', async () => {
+  try {
+    await obsServer.start();
+    return { success: true, url: obsServer.getURL() };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('obs:stop', async () => {
+  try {
+    await obsServer.stop();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('obs:getStatus', () => {
+  return {
+    running: obsServer.isRunning(),
+    url: obsServer.getURL()
+  };
+});
+
+ipcMain.handle('obs:broadcastEvent', (_event, event: { type: string; item?: any }) => {
+  obsServer.broadcast(event);
+  return true;
 });
 
 // Twitch IPC handlers
