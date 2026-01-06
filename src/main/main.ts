@@ -5,9 +5,11 @@ import { closeDatabase } from './database/connection';
 import { DatabaseService } from './database/service';
 import { VoiceService } from './database/voiceService';
 import { getTwitchService } from './twitch/twitchService';
+import { TwitchOAuthService } from './twitch/oauthService';
 
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
+const oauthService = new TwitchOAuthService();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -97,6 +99,38 @@ ipcMain.handle('db:setSetting', async (_event, key: string, value: string) => {
   return true;
 });
 
+// IPC handlers for Twitch OAuth
+ipcMain.handle('twitch:authenticateOAuth', async () => {
+  try {
+    const result = await oauthService.authenticate();
+    
+    // Save token and username to database
+    DatabaseService.setSetting('twitch_token', result.token);
+    DatabaseService.setSetting('twitch_username', result.username);
+    
+    return {
+      success: true,
+      token: result.token,
+      username: result.username
+    };
+  } catch (error) {
+    console.error('OAuth authentication failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+});
+
+ipcMain.handle('twitch:validateToken', async (_event, token: string) => {
+  try {
+    const isValid = await oauthService.validateToken(token);
+    return { success: true, valid: isValid };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('db:getAllSettings', async () => {
   return DatabaseService.getAllSettings();
 });
@@ -132,12 +166,29 @@ ipcMain.handle('db:isVoiceAvailable', async (_event, voiceId: string, provider: 
 });
 
 // Twitch IPC handlers
-ipcMain.handle('twitch:connect', async (_event, username: string, token: string) => {
+ipcMain.handle('twitch:connect', async (_event, params: { token: string; channels: string[] } | string, tokenOrChannels?: string | string[]) => {
   try {
+    let username: string;
+    let token: string;
+    let channels: string[];
+
+    // Handle both old format (username, token) and new format ({ token, channels })
+    if (typeof params === 'string') {
+      // Old format: username, token
+      username = params;
+      token = tokenOrChannels as string;
+      channels = [username];
+    } else {
+      // New format: { token, channels }
+      token = params.token;
+      channels = params.channels;
+      username = channels[0]; // Use first channel as username
+    }
+
     await twitchService.connect({
       username,
       token,
-      channels: [username]
+      channels
     });
     
     // Save credentials

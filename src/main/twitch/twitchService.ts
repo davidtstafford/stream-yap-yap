@@ -1,5 +1,5 @@
 import tmi from 'tmi.js';
-import { DatabaseService, ChatMessage, Viewer } from './database/service';
+import { DatabaseService, ChatMessage, Viewer } from '../database/service';
 
 interface TwitchServiceConfig {
   username: string;
@@ -109,8 +109,8 @@ export class TwitchService {
       this.onConnectionStatusCallback?.(false);
     });
 
-    // Handle errors
-    this.client.on('error', (error) => {
+    // Handle errors - using any to avoid TMI.js type issues
+    this.client.on('error' as any, (error: any) => {
       console.error('TMI.js error:', error);
     });
   }

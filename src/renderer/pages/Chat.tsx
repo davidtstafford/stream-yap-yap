@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getTTSQueue } from '../services/ttsQueue';
 
 interface ChatMessage {
   id?: number;
@@ -12,77 +11,15 @@ interface ChatMessage {
   was_read_by_tts?: boolean;
 }
 
-const Chat: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+interface ChatProps {
+  messages: ChatMessage[];
+  onClearMessages: () => void;
+}
+
+const Chat: React.FC<ChatProps> = ({ messages, onClearMessages }) => {
   const [autoScroll, setAutoScroll] = useState(true);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const ttsQueue = getTTSQueue();
-
-  useEffect(() => {
-    // Load TTS enabled setting
-    loadTTSSettings();
-    
-    // Listen for new messages from Twitch
-    const unsubscribe = window.api.on('twitch:message', (message: ChatMessage) => {
-      setMessages(prev => {
-        const newMessages = [...prev, message];
-        // Keep only last 500 messages in memory for performance
-        if (newMessages.length > 500) {
-          return newMessages.slice(-500);
-        }
-        return newMessages;
-      });
-      
-      // Process message for TTS
-      processMessageForTTS(message);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [ttsEnabled]);
-
-  const loadTTSSettings = async () => {
-    try {
-      const enabled = await window.api.invoke('db:getSetting', 'tts_enabled');
-      if (enabled) setTtsEnabled(enabled === 'true');
-    } catch (err) {
-      console.error('Failed to load TTS settings:', err);
-    }
-  };
-
-  const processMessageForTTS = async (message: ChatMessage) => {
-    if (!ttsEnabled) return;
-    
-    try {
-      // Check if viewer is muted
-      const isMuted = await window.api.invoke('db:getSetting', `viewer_muted_${message.viewer_id}`);
-      if (isMuted === 'true') return;
-      
-      // Get viewer's voice preference (or use default)
-      const defaultVoice = await window.api.invoke('db:getSetting', 'tts_default_voice');
-      const defaultSpeed = await window.api.invoke('db:getSetting', 'tts_default_speed');
-      const defaultPitch = await window.api.invoke('db:getSetting', 'tts_default_pitch');
-      const defaultVolume = await window.api.invoke('db:getSetting', 'tts_default_volume');
-      
-      // Add to TTS queue
-      ttsQueue.add({
-        id: `msg-${message.viewer_id}-${Date.now()}`,
-        text: `${message.display_name || message.username} says: ${message.message}`,
-        voiceId: defaultVoice || undefined,
-        provider: 'webspeech',
-        speed: defaultSpeed ? parseFloat(defaultSpeed) : 1.0,
-        pitch: defaultPitch ? parseFloat(defaultPitch) : 1.0,
-        volume: defaultVolume ? parseFloat(defaultVolume) : 1.0,
-        viewerId: message.viewer_id,
-        username: message.display_name || message.username
-      });
-    } catch (err) {
-      console.error('Failed to process message for TTS:', err);
-    }
-  };
 
   useEffect(() => {
     if (autoScroll) {
@@ -92,7 +29,7 @@ const Chat: React.FC = () => {
 
   const handleClearChat = () => {
     if (confirm('Clear all messages from this session? (History will remain in database)')) {
-      setMessages([]);
+      onClearMessages();
     }
   };
 

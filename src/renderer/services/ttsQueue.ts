@@ -87,33 +87,55 @@ export class TTSQueue {
   /**
    * Speak text using WebSpeech API
    */
-  private speak(item: TTSQueueItem): Promise<void> {
+  private async speak(item: TTSQueueItem): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!('speechSynthesis' in window)) {
         reject(new Error('WebSpeech API not supported'));
         return;
       }
 
-      const utterance = new SpeechSynthesisUtterance(item.text);
-      
-      // Find voice by ID (case-insensitive)
-      if (item.voiceId) {
+      // Wait for voices to be loaded
+      const ensureVoices = () => {
         const voices = window.speechSynthesis.getVoices();
-        const voice = voices.find(v => v.name.toLowerCase() === item.voiceId!.toLowerCase());
-        if (voice) {
-          utterance.voice = voice;
+        
+        if (voices.length === 0) {
+          // Voices not loaded yet, wait a bit
+          setTimeout(() => ensureVoices(), 100);
+          return;
         }
-      }
 
-      // Set parameters
-      utterance.rate = item.speed ?? 1.0;
-      utterance.pitch = item.pitch ?? 1.0;
-      utterance.volume = item.volume ?? 1.0;
+        const utterance = new SpeechSynthesisUtterance(item.text);
+        
+        // Find voice by ID (case-insensitive)
+        if (item.voiceId) {
+          const voice = voices.find(v => v.name.toLowerCase() === item.voiceId!.toLowerCase());
+          if (voice) {
+            utterance.voice = voice;
+          } else {
+            console.warn(`Voice not found: ${item.voiceId}, using default`);
+          }
+        }
 
-      utterance.onend = () => resolve();
-      utterance.onerror = (event) => reject(event.error);
+        // Set parameters
+        utterance.rate = item.speed ?? 1.0;
+        utterance.pitch = item.pitch ?? 1.0;
+        utterance.volume = item.volume ?? 1.0;
 
-      window.speechSynthesis.speak(utterance);
+        utterance.onend = () => {
+          console.log('TTS completed:', item.text.substring(0, 50));
+          resolve();
+        };
+        
+        utterance.onerror = (event) => {
+          console.error('TTS error:', event);
+          reject(event.error || 'Unknown TTS error');
+        };
+
+        console.log('Speaking:', item.text.substring(0, 50), 'Voice:', utterance.voice?.name || 'default');
+        window.speechSynthesis.speak(utterance);
+      };
+
+      ensureVoices();
     });
   }
 

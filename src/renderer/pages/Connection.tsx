@@ -1,231 +1,172 @@
 import React, { useState, useEffect } from 'react';
 
 const Connection: React.FC = () => {
-  const [connected, setConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [username, setUsername] = useState('');
-  const [token, setToken] = useState('');
-  const [autoConnect, setAutoConnect] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [status, setStatus] = useState('');
 
   useEffect(() => {
-    // Load settings on mount
-    loadSettings();
-    
-    // Check current connection status
-    checkConnectionStatus();
-    
-    // Listen for connection status changes
-    const unsubscribe = window.api.on('twitch:connectionStatus', (data: { connected: boolean; error?: string }) => {
-      setConnected(data.connected);
-      if (data.error) {
-        setError(data.error);
-      }
-    });
-    
-    return () => {
-      unsubscribe();
-    };
+    // Check if already connected
+    checkConnection();
   }, []);
 
-  const loadSettings = async () => {
+  const checkConnection = async () => {
     try {
-      const storedUsername = await window.api.invoke('db:getSetting', 'twitch_username');
-      const storedAutoConnect = await window.api.invoke('db:getSetting', 'auto_connect');
+      const token = await window.api.invoke('db:getSetting', 'twitch_token');
+      const savedUsername = await window.api.invoke('db:getSetting', 'twitch_username');
       
-      if (storedUsername) setUsername(storedUsername);
-      if (storedAutoConnect) setAutoConnect(storedAutoConnect === 'true');
-    } catch (err) {
-      console.error('Failed to load settings:', err);
+      if (token && savedUsername) {
+        // Validate token
+        const result = await window.api.invoke('twitch:validateToken', token);
+        if (result.success && result.valid) {
+          setIsConnected(true);
+          setUsername(savedUsername);
+          setStatus(`Connected as ${savedUsername}`);
+        } else {
+          setStatus('Token expired or invalid');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking connection:', error);
+      setStatus('Error checking connection status');
     }
   };
 
-  const checkConnectionStatus = async () => {
-    try {
-      const isConnected = await window.api.invoke('twitch:isConnected');
-      setConnected(isConnected);
-    } catch (err) {
-      console.error('Failed to check connection status:', err);
-    }
-  };
-
-  const handleConnect = async () => {
-    if (!username.trim() || !token.trim()) {
-      setError('Username and token are required');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
+  const handleOAuthLogin = async () => {
+    setIsConnecting(true);
+    setStatus('Opening browser for authentication...');
 
     try {
-      const result = await window.api.invoke('twitch:connect', username.trim(), token.trim());
+      const result = await window.api.invoke('twitch:authenticateOAuth');
       
       if (result.success) {
-        setConnected(true);
-        setToken(''); // Clear token from UI for security
+        setUsername(result.username);
+        setStatus('Authenticated! Connecting to chat...');
+        
+        // Connect to Twitch chat
+        await window.api.invoke('twitch:connect', {
+          token: result.token,
+          channels: [result.username]
+        });
+        
+        setIsConnected(true);
+        setStatus(`Connected as ${result.username}`);
       } else {
-        setError(result.error || 'Failed to connect');
+        setStatus(`Authentication failed: ${result.error}`);
       }
-    } catch (err) {
-      setError(String(err));
+    } catch (error) {
+      console.error('OAuth error:', error);
+      setStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setLoading(false);
+      setIsConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    setLoading(true);
-    
     try {
       await window.api.invoke('twitch:disconnect');
-      setConnected(false);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleForgetCredentials = async () => {
-    if (!confirm('Are you sure you want to forget your Twitch credentials?')) {
-      return;
-    }
-
-    setLoading(true);
-    
-    try {
-      await window.api.invoke('twitch:forgetCredentials');
-      setConnected(false);
+      setIsConnected(false);
       setUsername('');
-      setToken('');
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAutoConnectChange = async (checked: boolean) => {
-    setAutoConnect(checked);
-    try {
-      await window.api.invoke('db:setSetting', 'auto_connect', checked ? 'true' : 'false');
-    } catch (err) {
-      console.error('Failed to save auto-connect setting:', err);
+      setStatus('Disconnected');
+    } catch (error) {
+      console.error('Error disconnecting:', error);
+      setStatus('Error disconnecting');
     }
   };
 
   return (
-    <div className="page">
-      <h2>Connection</h2>
+    <div style={{ padding: '20px' }}>
+      <h1>Twitch Connection</h1>
       
-      <div className="card">
+      <div style={{ 
+        padding: '20px', 
+        border: '1px solid #ccc', 
+        borderRadius: '8px',
+        maxWidth: '500px',
+        marginTop: '20px'
+      }}>
         <div style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-            <span className={`status-indicator ${connected ? 'connected' : 'disconnected'}`}></span>
-            <strong>Status:</strong>&nbsp;
-            {connected ? 'Connected' : 'Disconnected'}
-          </div>
-          
-          {username && (
-            <div style={{ marginBottom: '10px' }}>
-              <strong>Username:</strong> {username}
-            </div>
-          )}
+          <strong>Status:</strong> 
+          <span style={{ 
+            marginLeft: '10px',
+            color: isConnected ? '#28a745' : '#6c757d'
+          }}>
+            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          </span>
         </div>
 
-        {error && (
-          <div style={{ 
-            padding: '12px', 
-            backgroundColor: '#ff000022', 
-            border: '1px solid #ff0000', 
-            borderRadius: '6px',
-            marginBottom: '20px',
-            color: '#ff6b6b'
-          }}>
-            {error}
+        {username && (
+          <div style={{ marginBottom: '20px' }}>
+            <strong>Username:</strong> <span style={{ marginLeft: '10px' }}>{username}</span>
           </div>
         )}
 
-        {!connected ? (
-          <div>
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
-                Twitch Username
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="your_username"
-                disabled={loading}
-              />
-            </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
-                OAuth Token
-              </label>
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="oauth:your_token_here"
-                disabled={loading}
-              />
-              <p style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
-                Get your token from{' '}
-                <a 
-                  href="https://twitchapps.com/tmi/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ color: '#9147ff' }}
-                >
-                  twitchapps.com/tmi
-                </a>
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={autoConnect}
-                  onChange={(e) => handleAutoConnectChange(e.target.checked)}
-                  style={{ marginRight: '8px' }}
-                />
-                <span style={{ fontSize: '14px' }}>Auto-connect on startup</span>
-              </label>
-            </div>
-
-            <button 
-              className="primary" 
-              onClick={handleConnect}
-              disabled={loading || !username.trim() || !token.trim()}
-            >
-              {loading ? 'Connecting...' : 'Connect to Twitch'}
-            </button>
+        {status && (
+          <div style={{ 
+            marginBottom: '20px',
+            padding: '10px',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '4px',
+            fontSize: '14px'
+          }}>
+            {status}
           </div>
-        ) : (
-          <div>
+        )}
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {!isConnected ? (
             <button 
-              className="secondary" 
+              onClick={handleOAuthLogin}
+              disabled={isConnecting}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#9147ff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isConnecting ? 'not-allowed' : 'pointer',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                opacity: isConnecting ? 0.6 : 1
+              }}
+            >
+              {isConnecting ? '⏳ Authenticating...' : '🔐 Connect with Twitch'}
+            </button>
+          ) : (
+            <button 
               onClick={handleDisconnect}
-              disabled={loading}
-              style={{ marginRight: '10px' }}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px'
+              }}
             >
               Disconnect
             </button>
-            
-            <button 
-              className="secondary" 
-              onClick={handleForgetCredentials}
-              disabled={loading}
-            >
-              Forget Credentials
-            </button>
-          </div>
-        )}
+          )}
+        </div>
+
+        <div style={{ 
+          marginTop: '20px',
+          padding: '15px',
+          backgroundColor: '#e7f3ff',
+          borderRadius: '4px',
+          fontSize: '13px',
+          color: '#004085'
+        }}>
+          <strong>ℹ️ How OAuth works:</strong>
+          <ul style={{ marginTop: '10px', marginBottom: 0, paddingLeft: '20px' }}>
+            <li>A browser window will open to Twitch</li>
+            <li>Log in and authorize Stream Yap Yap</li>
+            <li>The browser will redirect back to the app</li>
+            <li>You'll be automatically connected to chat</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

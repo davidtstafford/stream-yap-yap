@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "prod": "npm run build && npm start",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "webpack --config webpack.main.config.js --mode development --watch",
     "dev:renderer": "webpack serve --config webpack.renderer.config.js --mode development",
@@ -20,16 +21,16 @@
     "package:linux": "electron-builder --linux"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "tmi.js": "^1.8.5",
     "@aws-sdk/client-polly": "^3.713.0",
-    "microsoft-cognitiveservices-speech-sdk": "^1.41.1",
     "@google-cloud/text-to-speech": "^5.5.0",
+    "better-sqlite3": "^11.8.1",
     "discord.js": "^14.17.3",
     "express": "^4.21.2",
+    "microsoft-cognitiveservices-speech-sdk": "^1.41.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.1.1"
+    "react-router-dom": "^7.1.1",
+    "tmi.js": "^1.8.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -42,6 +43,7 @@
     "css-loader": "^7.1.2",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
+    "electron-rebuild": "^3.2.9",
     "html-webpack-plugin": "^5.6.3",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",
