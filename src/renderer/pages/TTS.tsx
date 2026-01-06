@@ -58,6 +58,16 @@ const TTS: React.FC = () => {
   const [redeemDuration, setRedeemDuration] = useState(30);
   const [activeRedeems, setActiveRedeems] = useState<any[]>([]);
 
+  // Restrictions state
+  const [restrictionSearch, setRestrictionSearch] = useState('');
+  const [restrictionType, setRestrictionType] = useState<'mute' | 'cooldown'>('mute');
+  const [muteDuration, setMuteDuration] = useState(30);
+  const [cooldownGap, setCooldownGap] = useState(30);
+  const [cooldownDuration, setCooldownDuration] = useState(0);
+  const [mutedViewers, setMutedViewers] = useState<any[]>([]);
+  const [cooldownViewers, setCooldownViewers] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
   const webSpeechService = getWebSpeechService();
   const ttsQueue = getTTSQueue();
 
@@ -80,6 +90,14 @@ const TTS: React.FC = () => {
     // Load TTS Access settings
     loadAccessSettings();
     
+    // Load restrictions
+    loadRestrictions();
+
+    // Poll for restrictions updates every 30 seconds
+    const restrictionsInterval = setInterval(() => {
+      loadRestrictions();
+    }, 30000);
+    
     // Set up queue update listener
     ttsQueue.onQueueUpdate((updatedQueue) => {
       setQueue(updatedQueue);
@@ -92,6 +110,10 @@ const TTS: React.FC = () => {
     ttsQueue.onItemComplete(() => {
       setCurrentItem(null);
     });
+
+    return () => {
+      clearInterval(restrictionsInterval);
+    };
   }, []);
 
   const initVoices = async () => {
@@ -352,6 +374,34 @@ const TTS: React.FC = () => {
       await window.api.invoke('db:setSetting', key, String(value));
     } catch (error) {
       console.error(`Failed to save TTS rule ${key}:`, error);
+    }
+  };
+
+  const loadRestrictions = async () => {
+    try {
+      const [muted, cooldown] = await Promise.all([
+        window.api.invoke('db:query',
+          `SELECT r.*, v.username 
+           FROM viewer_tts_restrictions r 
+           JOIN viewers v ON r.viewer_id = v.id 
+           WHERE r.is_muted = 1 
+           ORDER BY r.muted_at DESC`,
+          []
+        ),
+        window.api.invoke('db:query',
+          `SELECT r.*, v.username 
+           FROM viewer_tts_restrictions r 
+           JOIN viewers v ON r.viewer_id = v.id 
+           WHERE r.has_cooldown = 1 
+           ORDER BY r.cooldown_set_at DESC`,
+          []
+        )
+      ]);
+      
+      setMutedViewers(muted || []);
+      setCooldownViewers(cooldown || []);
+    } catch (error) {
+      console.error('Failed to load restrictions:', error);
     }
   };
 
@@ -1437,12 +1487,375 @@ const TTS: React.FC = () => {
     </div>
   );
 
-  const renderRestrictionsTab = () => (
-    <div className="card">
-      <h3>Viewer TTS Restrictions</h3>
-      <p style={{ color: '#888' }}>Coming soon...</p>
-    </div>
-  );
+  const renderRestrictionsTab = () => {
+    const searchViewers = async () => {
+      if (!restrictionSearch.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      
+      try {
+        const viewers = await window.api.invoke('db:getViewers');
+        const filtered = viewers.filter((v: any) => 
+          v.username.toLowerCase().includes(restrictionSearch.toLowerCase()) ||
+          v.display_name?.toLowerCase().includes(restrictionSearch.toLowerCase())
+        ).slice(0, 10);
+        setSearchResults(filtered);
+      } catch (error) {
+        console.error('Failed to search viewers:', error);
+      }
+    };
+
+    const applyRestriction = async (viewer: any) => {
+      try {
+        if (restrictionType === 'mute') {
+          await window.api.invoke('db:execute',
+            `INSERT INTO viewer_tts_restrictions (viewer_id, is_muted, mute_period_mins, muted_at, mute_expires_at, updated_at)
+             VALUES (?, 1, ?, datetime('now'), datetime('now', '+' || ? || ' minutes'), datetime('now'))
+             ON CONFLICT(viewer_id) DO UPDATE SET
+               is_muted = 1,
+               mute_period_mins = excluded.mute_period_mins,
+               muted_at = excluded.muted_at,
+               mute_expires_at = excluded.mute_expires_at,
+               updated_at = excluded.updated_at`,
+            [viewer.id, muteDuration > 0 ? muteDuration : null, muteDuration]
+          );
+        } else {
+          await window.api.invoke('db:execute',
+            `INSERT INTO viewer_tts_restrictions (viewer_id, has_cooldown, cooldown_gap_seconds, cooldown_period_mins, cooldown_set_at, cooldown_expires_at, updated_at)
+             VALUES (?, 1, ?, ?, datetime('now'), ${cooldownDuration > 0 ? "datetime('now', '+' || ? || ' minutes')" : 'NULL'}, datetime('now'))
+             ON CONFLICT(viewer_id) DO UPDATE SET
+               has_cooldown = 1,
+               cooldown_gap_seconds = excluded.cooldown_gap_seconds,
+               cooldown_period_mins = excluded.cooldown_period_mins,
+               cooldown_set_at = excluded.cooldown_set_at,
+               cooldown_expires_at = excluded.cooldown_expires_at,
+               updated_at = excluded.updated_at`,
+            cooldownDuration > 0 ? [viewer.id, cooldownGap, cooldownDuration, cooldownDuration] : [viewer.id, cooldownGap, cooldownDuration]
+          );
+        }
+        
+        setRestrictionSearch('');
+        setSearchResults([]);
+        await loadRestrictions();
+      } catch (error) {
+        console.error('Failed to apply restriction:', error);
+        alert('Failed to apply restriction');
+      }
+    };
+
+    const removeRestriction = async (viewerId: string, type: 'mute' | 'cooldown') => {
+      try {
+        if (type === 'mute') {
+          await window.api.invoke('db:execute',
+            'UPDATE viewer_tts_restrictions SET is_muted = 0, mute_expires_at = NULL WHERE viewer_id = ?',
+            [viewerId]
+          );
+        } else {
+          await window.api.invoke('db:execute',
+            'UPDATE viewer_tts_restrictions SET has_cooldown = 0, cooldown_expires_at = NULL WHERE viewer_id = ?',
+            [viewerId]
+          );
+        }
+        await loadRestrictions();
+      } catch (error) {
+        console.error('Failed to remove restriction:', error);
+      }
+    };
+
+    const formatTimeRemaining = (expiresAt: string | null): string => {
+      if (!expiresAt) return 'Permanent';
+      
+      const now = new Date();
+      const expires = new Date(expiresAt);
+      const diff = expires.getTime() - now.getTime();
+
+      if (diff <= 0) return 'Expired';
+
+      const minutes = Math.floor(diff / 60000);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+
+      if (days > 0) return `${days}d ${hours % 24}h`;
+      if (hours > 0) return `${hours}h ${minutes % 60}m`;
+      return `${minutes}m`;
+    };
+
+    return (
+      <div>
+        {/* Add Restriction Section */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ margin: 0 }}>Add TTS Restriction</h3>
+            <button
+              onClick={loadRestrictions}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: '#555',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              🔄 Refresh
+            </button>
+          </div>
+          
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Search for viewer:
+            </label>
+            <input
+              type="text"
+              value={restrictionSearch}
+              onChange={(e) => {
+                setRestrictionSearch(e.target.value);
+                searchViewers();
+              }}
+              placeholder="Type username..."
+              style={{ width: '100%' }}
+            />
+            
+            {searchResults.length > 0 && (
+              <div style={{ 
+                marginTop: '5px', 
+                border: '1px solid #444', 
+                borderRadius: '4px', 
+                maxHeight: '200px', 
+                overflowY: 'auto' 
+              }}>
+                {searchResults.map(viewer => (
+                  <div
+                    key={viewer.id}
+                    onClick={() => {
+                      setRestrictionSearch(viewer.username);
+                      setSearchResults([]);
+                    }}
+                    style={{
+                      padding: '8px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid #333'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    {viewer.display_name || viewer.username}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+              Restriction Type:
+            </label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input
+                  type="radio"
+                  checked={restrictionType === 'mute'}
+                  onChange={() => setRestrictionType('mute')}
+                />
+                Mute
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input
+                  type="radio"
+                  checked={restrictionType === 'cooldown'}
+                  onChange={() => setRestrictionType('cooldown')}
+                />
+                Cooldown
+              </label>
+            </div>
+          </div>
+
+          {restrictionType === 'mute' ? (
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                Duration (minutes, 0 = permanent):
+              </label>
+              <input
+                type="number"
+                value={muteDuration}
+                onChange={(e) => setMuteDuration(parseInt(e.target.value) || 0)}
+                min="0"
+                style={{ width: '150px' }}
+              />
+            </div>
+          ) : (
+            <>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Cooldown gap (seconds between TTS):
+                </label>
+                <input
+                  type="number"
+                  value={cooldownGap}
+                  onChange={(e) => setCooldownGap(parseInt(e.target.value) || 0)}
+                  min="1"
+                  style={{ width: '150px' }}
+                />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#888', marginBottom: '5px' }}>
+                  Duration (minutes, 0 = permanent):
+                </label>
+                <input
+                  type="number"
+                  value={cooldownDuration}
+                  onChange={(e) => setCooldownDuration(parseInt(e.target.value) || 0)}
+                  min="0"
+                  style={{ width: '150px' }}
+                />
+              </div>
+            </>
+          )}
+
+          <button
+            onClick={async () => {
+              const viewers = await window.api.invoke('db:getViewers');
+              const viewer = viewers.find((v: any) => v.username.toLowerCase() === restrictionSearch.toLowerCase());
+              if (viewer) {
+                await applyRestriction(viewer);
+              } else {
+                alert('Viewer not found');
+              }
+            }}
+            disabled={!restrictionSearch.trim()}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: restrictionSearch.trim() ? '#9147ff' : '#555',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: restrictionSearch.trim() ? 'pointer' : 'not-allowed'
+            }}
+          >
+            Apply {restrictionType === 'mute' ? 'Mute' : 'Cooldown'}
+          </button>
+        </div>
+
+        {/* Muted Viewers Table */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <h3 style={{ marginBottom: '15px' }}>Muted Viewers</h3>
+          
+          {mutedViewers.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', padding: '20px' }}>
+              No muted viewers
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #444' }}>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Username</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Muted At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Expires At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Time Remaining</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mutedViewers.map((viewer) => (
+                    <tr key={viewer.viewer_id} style={{ borderBottom: '1px solid #333' }}>
+                      <td style={{ padding: '10px', fontSize: '14px' }}>{viewer.username || viewer.viewer_id}</td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {new Date(viewer.muted_at).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {viewer.mute_expires_at ? new Date(viewer.mute_expires_at).toLocaleString() : 'Never'}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '14px', fontWeight: 'bold' }}>
+                        {formatTimeRemaining(viewer.mute_expires_at)}
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <button
+                          onClick={() => removeRestriction(viewer.viewer_id, 'mute')}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: '12px',
+                            backgroundColor: '#d32f2f',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Unmute
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Cooldown Viewers Table */}
+        <div className="card">
+          <h3 style={{ marginBottom: '15px' }}>Viewers with Cooldowns</h3>
+          
+          {cooldownViewers.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', padding: '20px' }}>
+              No viewers with cooldowns
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #444' }}>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Username</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Gap (seconds)</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Set At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Expires At</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Time Remaining</th>
+                    <th style={{ padding: '10px', textAlign: 'left', fontSize: '12px', color: '#888' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cooldownViewers.map((viewer) => (
+                    <tr key={viewer.viewer_id} style={{ borderBottom: '1px solid #333' }}>
+                      <td style={{ padding: '10px', fontSize: '14px' }}>{viewer.username || viewer.viewer_id}</td>
+                      <td style={{ padding: '10px', fontSize: '14px' }}>{viewer.cooldown_gap_seconds}s</td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {new Date(viewer.cooldown_set_at).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '12px', color: '#888' }}>
+                        {viewer.cooldown_expires_at ? new Date(viewer.cooldown_expires_at).toLocaleString() : 'Never'}
+                      </td>
+                      <td style={{ padding: '10px', fontSize: '14px', fontWeight: 'bold' }}>
+                        {formatTimeRemaining(viewer.cooldown_expires_at)}
+                      </td>
+                      <td style={{ padding: '10px' }}>
+                        <button
+                          onClick={() => removeRestriction(viewer.viewer_id, 'cooldown')}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: '12px',
+                            backgroundColor: '#d32f2f',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="page">
