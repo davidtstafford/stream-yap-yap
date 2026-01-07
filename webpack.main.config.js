@@ -1,6 +1,7 @@
 const path = require('path');
 
 module.exports = {
+  cache: false,
   entry: {
     main: './src/main/main.ts',
     preload: './src/main/preload.ts'
