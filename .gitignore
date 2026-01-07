@@ -8,9 +8,11 @@ coverage/
 
 # Production
 dist/
-build/
 out/
 release/
+
+# Keep build icons for electron-builder
+!build/icon.*
 
 # Misc
 .DS_Store

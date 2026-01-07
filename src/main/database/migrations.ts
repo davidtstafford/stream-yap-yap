@@ -1,0 +1,158 @@
+import { getDatabase } from './connection';
+import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
+import { VoiceService } from './voiceService';
+
+export function initializeDatabase(): void {
+  const db = getDatabase();
+  
+  // Check current schema version
+  const versionTable = db.prepare(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name='schema_version'
+  `).get();
+  
+  let currentVersion = 0;
+  
+  if (versionTable) {
+    const versionRow = db.prepare('SELECT MAX(version) as version FROM schema_version').get() as { version: number };
+    currentVersion = versionRow?.version || 0;
+  }
+  
+  // Run migrations if needed
+  if (currentVersion < SCHEMA_VERSION) {
+    console.log(`Migrating database from version ${currentVersion} to ${SCHEMA_VERSION}`);
+    
+    // Add voice_type column if upgrading from version < 2
+    if (currentVersion < 2) {
+      try {
+        db.prepare('ALTER TABLE tts_voices ADD COLUMN voice_type TEXT').run();
+        console.log('Added voice_type column to tts_voices table');
+      } catch (err: any) {
+        // Column might already exist, ignore duplicate column errors
+        if (!err.message.includes('duplicate column')) {
+          console.error('Failed to add voice_type column:', err);
+        }
+      }
+    }
+    
+    // Execute schema
+    db.exec(SCHEMA_SQL);
+    
+    // Update schema version
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION);
+    
+    console.log('Database migration completed');
+  } else {
+    console.log(`Database is up to date (version ${currentVersion})`);
+  }
+  
+  // Insert default settings if not exists
+  insertDefaultSettings();
+  
+  // Insert default commands if not exists
+  insertDefaultCommands();
+  
+  // Scan and sync TTS voices on startup
+  VoiceService.scanAndSyncVoices().catch(err => {
+    console.error('Failed to scan TTS voices:', err);
+  });
+}
+
+function insertDefaultSettings(): void {
+  const db = getDatabase();
+  
+  const defaultSettings = [
+    { key: 'twitch_connected', value: 'false' },
+    { key: 'tts_enabled', value: 'true' },
+    { key: 'tts_provider', value: 'webspeech' },
+    { key: 'tts_default_voice', value: '' },
+    { key: 'tts_default_volume', value: '1.0' },
+    { key: 'tts_default_speed', value: '1.0' },
+    { key: 'tts_default_pitch', value: '1.0' },
+    { key: 'obs_browser_source_enabled', value: 'false' },
+    { key: 'obs_browser_source_port', value: '8080' },
+    { key: 'mute_in_app_when_obs', value: 'true' },
+    { key: 'auto_connect', value: 'true' },
+    { key: 'tts_access_restricted', value: 'false' },
+    { key: 'tts_access_subscribers', value: 'false' },
+    { key: 'tts_access_vips', value: 'false' },
+    { key: 'tts_access_moderators', value: 'false' },
+    { key: 'tts_access_redeems', value: 'false' },
+    { key: 'tts_redeem_name', value: 'Give Me TTS' },
+    { key: 'tts_redeem_duration', value: '30' },
+    // Provider enablement
+    { key: 'tts_webspeech_enabled', value: 'true' },
+    { key: 'tts_aws_enabled', value: 'false' },
+    { key: 'tts_azure_enabled', value: 'false' },
+    { key: 'tts_google_enabled', value: 'false' },
+    // AWS Polly settings
+    { key: 'tts_aws_access_key', value: '' },
+    { key: 'tts_aws_secret_key', value: '' },
+    { key: 'tts_aws_region', value: 'us-east-1' },
+    { key: 'tts_aws_engine', value: 'neural' },
+    { key: 'tts_aws_disable_neural', value: 'false' },
+    // Azure TTS settings
+    { key: 'tts_azure_subscription_key', value: '' },
+    { key: 'tts_azure_region', value: 'eastus' },
+    { key: 'tts_azure_disable_neural', value: 'false' },
+    // Google Cloud TTS settings
+    { key: 'tts_google_service_account_json', value: '' },
+    // Voice scanning
+    { key: 'tts_voices_last_scanned', value: '' },
+    { key: 'tts_auto_scan_on_startup', value: 'true' }
+  ];
+  
+  const insertStmt = db.prepare(`
+    INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
+  `);
+  
+  for (const setting of defaultSettings) {
+    insertStmt.run(setting.key, setting.value);
+  }
+}
+
+function insertDefaultCommands(): void {
+  const db = getDatabase();
+  
+  const defaultCommands = [
+    {
+      command_name: 'setvoice',
+      description: 'Set your TTS voice',
+      permission_level: 'viewer',
+      enabled: 1
+    },
+    {
+      command_name: 'mutevoice',
+      description: 'Mute a viewer\'s TTS (Moderator only)',
+      permission_level: 'moderator',
+      enabled: 1
+    },
+    {
+      command_name: 'unmutevoice',
+      description: 'Unmute a viewer\'s TTS (Moderator only)',
+      permission_level: 'moderator',
+      enabled: 1
+    },
+    {
+      command_name: 'cooldown',
+      description: 'Set TTS cooldown for a viewer (Moderator only)',
+      permission_level: 'moderator',
+      enabled: 1
+    },
+    {
+      command_name: 'voices',
+      description: 'List available TTS voices',
+      permission_level: 'viewer',
+      enabled: 1
+    }
+  ];
+  
+  const insertStmt = db.prepare(`
+    INSERT OR IGNORE INTO chat_commands (command_name, description, permission_level, enabled)
+    VALUES (?, ?, ?, ?)
+  `);
+  
+  for (const cmd of defaultCommands) {
+    insertStmt.run(cmd.command_name, cmd.description, cmd.permission_level, cmd.enabled);
+  }
+}
