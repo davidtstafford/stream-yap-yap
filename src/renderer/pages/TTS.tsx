@@ -4,6 +4,7 @@ import { getTTSQueue, TTSQueueItem } from '../services/ttsQueue';
 import AwsPollyGuide from '../components/guides/AwsPollyGuide';
 import AzureTtsGuide from '../components/guides/AzureTtsGuide';
 import GoogleTtsGuide from '../components/guides/GoogleTtsGuide';
+import WebSpeechGuide from '../components/guides/WebSpeechGuide';
 
 type TTSTab = 'main' | 'rules' | 'access' | 'voice-settings' | 'restrictions';
 
@@ -49,6 +50,7 @@ const TTS: React.FC = () => {
   const [voiceSearchText, setVoiceSearchText] = useState('');
 
   // Setup guides
+  const [showWebSpeechGuide, setShowWebSpeechGuide] = useState(false);
   const [showAwsGuide, setShowAwsGuide] = useState(false);
   const [showAzureGuide, setShowAzureGuide] = useState(false);
   const [showGoogleGuide, setShowGoogleGuide] = useState(false);
@@ -809,15 +811,24 @@ const TTS: React.FC = () => {
         <div style={{ padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px', marginBottom: '15px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <h4 style={{ margin: 0 }}>🌐 WebSpeech (Browser Built-in)</h4>
-            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={webspeechEnabled}
-                onChange={(e) => handleProviderToggle('webspeech', e.target.checked)}
-                style={{ marginRight: '8px' }}
-              />
-              <span>{webspeechEnabled ? 'Enabled' : 'Disabled'}</span>
-            </label>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="secondary" 
+                onClick={() => setShowWebSpeechGuide(true)}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                📖 Setup Guide
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={webspeechEnabled}
+                  onChange={(e) => handleProviderToggle('webspeech', e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>{webspeechEnabled ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
           </div>
           <p style={{ fontSize: '13px', color: '#aaa', margin: 0 }}>
             Free • No configuration required • Basic quality voices
@@ -1425,6 +1436,7 @@ const TTS: React.FC = () => {
       </div>
 
       {/* Setup Guides */}
+      {showWebSpeechGuide && <WebSpeechGuide onClose={() => setShowWebSpeechGuide(false)} />}
       {showAwsGuide && <AwsPollyGuide onClose={() => setShowAwsGuide(false)} />}
       {showAzureGuide && <AzureTtsGuide onClose={() => setShowAzureGuide(false)} />}
       {showGoogleGuide && <GoogleTtsGuide onClose={() => setShowGoogleGuide(false)} />}
