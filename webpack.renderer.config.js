@@ -2,13 +2,14 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = {
+  cache: false,
   entry: './src/renderer/index.tsx',
   target: 'electron-renderer',
   module: {
     rules: [
       {
         test: /\.tsx?$/,
-        include: /src\/renderer/,
+        exclude: /node_modules/,
         use: [{ loader: 'ts-loader', options: { configFile: 'tsconfig.renderer.json' } }]
       },
       {
