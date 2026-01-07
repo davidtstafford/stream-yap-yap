@@ -60,6 +60,7 @@
   "build": {
     "appId": "com.davidtstafford.stream-yap-yap",
     "productName": "Stream Yap Yap",
+    "publish": null,
     "directories": {
       "output": "release"
     },
