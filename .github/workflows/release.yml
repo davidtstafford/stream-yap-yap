@@ -20,26 +20,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Clean directories
-        shell: bash
-        run: rm -rf node_modules dist release
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Verify TypeScript tooling
-        shell: bash
-        run: |
-          echo "Checking for ts-loader..."
-          ls node_modules/ts-loader/ || echo "ts-loader NOT FOUND"
-          echo "Checking for typescript..."
-          ls node_modules/typescript/ || echo "typescript NOT FOUND"
-          echo "Checking webpack config..."
-          cat webpack.main.config.js
-
-      - name: Build application
-        run: npm run build
+        run: npm ci
 
       - name: Get version from package.json
         id: version
@@ -49,17 +33,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
-      - name: Package for macOS
+      - name: Build and package for macOS
         if: matrix.os == 'macos-latest'
-        run: npm run package:mac
+        run: npm run dist:mac
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: true
+          SKIP_GH_PUBLISH: true
 
-      - name: Package for Windows
+      - name: Build and package for Windows
         if: matrix.os == 'windows-latest'
-        run: npm run package:win
+        run: npm run dist:win
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: true
+          SKIP_GH_PUBLISH: true
 
       - name: Upload macOS artifacts
         if: matrix.os == 'macos-latest'

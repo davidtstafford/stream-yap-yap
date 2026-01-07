@@ -18,7 +18,10 @@
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
-    "package:linux": "electron-builder --linux"
+    "package:linux": "electron-builder --linux",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:all": "npm run build && electron-builder -mw"
   },
   "dependencies": {
     "@aws-sdk/client-polly": "^3.964.0",
