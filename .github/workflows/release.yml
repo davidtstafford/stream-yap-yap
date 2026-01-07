@@ -35,12 +35,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
-      - name: Build and package for Windows
-        if: matrix.os == 'windows-latest'
-        run: npm run dist:win
+      - name: Build and package for macOS
+        if: matrix.os == 'macos-latest'
+        run: npm run dist:mac
         env:
           CI: true
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_GH_PUBLISH: true
 
@@ -49,6 +48,7 @@ jobs:
         run: npm run dist:win
         env:
           CI: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_GH_PUBLISH: true
 
       - name: Upload macOS artifacts
