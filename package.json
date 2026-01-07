@@ -68,7 +68,7 @@
       "dist/**/*",
       "package.json"
     ],
-    "npmRebuild": false,
+    "npmRebuild": true,
     "buildDependenciesFromSource": false,
     "mac": {
       "target": "dmg",
