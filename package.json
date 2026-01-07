@@ -1,6 +1,6 @@
 {
   "name": "stream-yap-yap",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Stable Twitch Chat-to-TTS application",
   "main": "./dist/main.js",
   "author": "David Stafford",
