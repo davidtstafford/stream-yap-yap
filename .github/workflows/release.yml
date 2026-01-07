@@ -88,9 +88,25 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Verify ts-loader installation
+        run: |
+          if (Test-Path node_modules/ts-loader) {
+            Write-Host "✓ ts-loader is installed"
+          } else {
+            Write-Host "✗ ts-loader is NOT installed"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Delete webpack cache
+        run: |
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue .cache
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue node_modules/.cache
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist
+        shell: pwsh
+
       - name: Build Windows Installer
         run: |
-          $env:WEBPACK_CACHE_DISABLED = "true"
           npm run build
           npx electron-builder --win
         shell: pwsh
