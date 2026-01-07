@@ -71,10 +71,14 @@
     "npmRebuild": false,
     "buildDependenciesFromSource": false,
     "mac": {
-      "target": "dmg",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64"]
+        }
+      ],
       "category": "public.app-category.utilities",
-      "icon": "build/icon.icns",
-      "arch": ["x64"]
+      "icon": "build/icon.icns"
     },
     "win": {
       "target": "nsis",
