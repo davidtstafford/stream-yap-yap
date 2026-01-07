@@ -64,6 +64,8 @@
       "dist/**/*",
       "package.json"
     ],
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
     "mac": {
       "target": "dmg",
       "category": "public.app-category.utilities"
