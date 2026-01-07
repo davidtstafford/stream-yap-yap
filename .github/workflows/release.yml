@@ -21,10 +21,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Clean install dependencies
+      - name: Clean and install dependencies
         run: |
-          npm ci --legacy-peer-deps
-          npm ls ts-loader webpack
+          rm -rf node_modules dist release
+          npm install --legacy-peer-deps
 
       - name: Build application
         run: npm run build
