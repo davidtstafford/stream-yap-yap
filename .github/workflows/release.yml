@@ -1,9 +1,7 @@
 name: Build and Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -81,38 +79,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Clear npm cache
-        run: npm cache clean --force
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Verify ts-loader installation
-        run: |
-          if (Test-Path node_modules/ts-loader) {
-            Write-Host "✓ ts-loader is installed"
-          } else {
-            Write-Host "✗ ts-loader is NOT installed"
-            exit 1
-          }
-        shell: pwsh
-
-      - name: Delete webpack cache
-        run: |
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue .cache
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue node_modules/.cache
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist
-        shell: pwsh
+        run: npm ci
 
       - name: Build Windows Installer
-        run: |
-          npm run build
-          npx electron-builder --win
-        shell: pwsh
+        run: npm run dist:win
         env:
           CI: true
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_GH_PUBLISH: true
 
       - name: Upload NSIS installer artifact
