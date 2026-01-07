@@ -1,6 +1,6 @@
 {
   "name": "stream-yap-yap",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Stable Twitch Chat-to-TTS application",
   "main": "./dist/main.js",
   "author": "David Stafford",
@@ -73,7 +73,8 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.utilities",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "arch": ["x64"]
     },
     "win": {
       "target": "nsis",
