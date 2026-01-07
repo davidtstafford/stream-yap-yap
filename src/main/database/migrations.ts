@@ -22,6 +22,19 @@ export function initializeDatabase(): void {
   if (currentVersion < SCHEMA_VERSION) {
     console.log(`Migrating database from version ${currentVersion} to ${SCHEMA_VERSION}`);
     
+    // Add voice_type column if upgrading from version < 2
+    if (currentVersion < 2) {
+      try {
+        db.prepare('ALTER TABLE tts_voices ADD COLUMN voice_type TEXT').run();
+        console.log('Added voice_type column to tts_voices table');
+      } catch (err: any) {
+        // Column might already exist, ignore duplicate column errors
+        if (!err.message.includes('duplicate column')) {
+          console.error('Failed to add voice_type column:', err);
+        }
+      }
+    }
+    
     // Execute schema
     db.exec(SCHEMA_SQL);
     
@@ -66,7 +79,27 @@ function insertDefaultSettings(): void {
     { key: 'tts_access_moderators', value: 'false' },
     { key: 'tts_access_redeems', value: 'false' },
     { key: 'tts_redeem_name', value: 'Give Me TTS' },
-    { key: 'tts_redeem_duration', value: '30' }
+    { key: 'tts_redeem_duration', value: '30' },
+    // Provider enablement
+    { key: 'tts_webspeech_enabled', value: 'true' },
+    { key: 'tts_aws_enabled', value: 'false' },
+    { key: 'tts_azure_enabled', value: 'false' },
+    { key: 'tts_google_enabled', value: 'false' },
+    // AWS Polly settings
+    { key: 'tts_aws_access_key', value: '' },
+    { key: 'tts_aws_secret_key', value: '' },
+    { key: 'tts_aws_region', value: 'us-east-1' },
+    { key: 'tts_aws_engine', value: 'neural' },
+    { key: 'tts_aws_disable_neural', value: 'false' },
+    // Azure TTS settings
+    { key: 'tts_azure_subscription_key', value: '' },
+    { key: 'tts_azure_region', value: 'eastus' },
+    { key: 'tts_azure_disable_neural', value: 'false' },
+    // Google Cloud TTS settings
+    { key: 'tts_google_service_account_json', value: '' },
+    // Voice scanning
+    { key: 'tts_voices_last_scanned', value: '' },
+    { key: 'tts_auto_scan_on_startup', value: 'true' }
   ];
   
   const insertStmt = db.prepare(`

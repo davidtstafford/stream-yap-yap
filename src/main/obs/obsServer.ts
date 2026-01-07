@@ -3,14 +3,16 @@ import { Server as WebSocketServer } from 'ws';
 import * as http from 'http';
 import * as path from 'path';
 import { DatabaseService } from '../database/service';
+import { EventEmitter } from 'events';
 
-export class OBSServer {
+export class OBSServer extends EventEmitter {
   private app: express.Application;
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
   private port: number;
 
   constructor(port: number = 8765) {
+    super();
     this.port = port;
     this.app = express();
     this.setupRoutes();
@@ -148,6 +150,7 @@ export class OBSServer {
     let ws = null;
     let reconnectTimeout = null;
     const messages = new Map();
+    let currentAudio = null; // Keep reference to prevent garbage collection
 
     function connect() {
       ws = new WebSocket('ws://localhost:${this.port}/ws');
@@ -190,15 +193,25 @@ export class OBSServer {
 
       switch (type) {
         case 'start':
+          console.log('[OBS Overlay] Received TTS event:', {
+            provider: item.provider,
+            voiceId: item.voiceId,
+            hasAudioUrl: !!item.audioUrl,
+            hasAudioData: !!item.audioData,
+            audioDataLength: item.audioData?.length || 0
+          });
           addMessage(item);
           if (item.audioUrl) {
             // Play audio from cloud provider (AWS/Azure/GCP)
+            console.log('[OBS Overlay] Playing from audioUrl');
             playAudioUrl(item.audioUrl);
           } else if (item.audioData) {
             // Play base64 encoded audio
+            console.log('[OBS Overlay] Playing from audioData');
             playAudioData(item.audioData);
           } else {
             // Fallback: synthesize using WebSpeech
+            console.log('[OBS Overlay] Falling back to WebSpeech');
             speakMessage(item);
           }
           break;
@@ -212,20 +225,74 @@ export class OBSServer {
     }
 
     function playAudioUrl(url) {
-      const audio = new Audio(url);
-      audio.play().catch(err => {
-        console.error('Failed to play audio URL:', err);
+      console.log('[OBS Overlay] playAudioUrl called with:', url.substring(0, 100));
+      // Stop any currently playing audio
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      
+      currentAudio = new Audio(url);
+      currentAudio.onended = () => {
+        console.log('[OBS Overlay] Audio URL playback ended');
+        currentAudio = null;
+        notifyAudioComplete();
+      };
+      currentAudio.onerror = (err) => {
+        console.error('[OBS Overlay] Audio URL error:', err);
+        currentAudio = null;
+        notifyAudioComplete();
+      };
+      currentAudio.play().then(() => {
+        console.log('[OBS Overlay] Audio URL play started successfully');
+      }).catch(err => {
+        console.error('[OBS Overlay] Audio URL play failed:', err);
+        currentAudio = null;
+        notifyAudioComplete();
       });
     }
 
     function playAudioData(base64Data) {
+      console.log('[OBS Overlay] playAudioData called, data length:', base64Data?.length || 0);
+      // Stop any currently playing audio
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      
       try {
-        const audio = new Audio('data:audio/mp3;base64,' + base64Data);
-        audio.play().catch(err => {
-          console.error('Failed to play audio data:', err);
+        currentAudio = new Audio('data:audio/mp3;base64,' + base64Data);
+        currentAudio.onended = () => {
+          console.log('[OBS Overlay] Audio data playback ended');
+          currentAudio = null;
+          notifyAudioComplete();
+        };
+        currentAudio.onerror = (err) => {
+          console.error('[OBS Overlay] Audio data error:', err);
+          currentAudio = null;
+          notifyAudioComplete();
+        };
+        currentAudio.play().then(() => {
+          console.log('[OBS Overlay] Audio data play started successfully');
+        }).catch(err => {
+          console.error('[OBS Overlay] Audio data play failed:', err);
+          currentAudio = null;
+          notifyAudioComplete();
         });
       } catch (err) {
-        console.error('Failed to create audio from data:', err);
+        console.error('[OBS Overlay] Failed to create audio from data:', err);
+        currentAudio = null;
+        notifyAudioComplete();
+      }
+    }
+
+    function notifyAudioComplete() {
+      console.log('[OBS Overlay] Audio complete - sending message to server');
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'audioComplete' }));
+        console.log('[OBS Overlay] ✅ Sent audioComplete message to server');
+      } else {
+        console.error('[OBS Overlay] ⚠️ WebSocket not connected, cannot send audioComplete');
       }
     }
 
@@ -256,10 +323,12 @@ export class OBSServer {
 
       utterance.onend = () => {
         console.log('Speech complete for:', item.id);
+        notifyAudioComplete();
       };
 
       utterance.onerror = (err) => {
         console.error('Speech error:', err);
+        notifyAudioComplete();
       };
 
       window.speechSynthesis.speak(utterance);
@@ -345,6 +414,17 @@ export class OBSServer {
         
         this.wss.on('connection', (ws) => {
           console.log('OBS overlay connected');
+          
+          ws.on('message', (data) => {
+            try {
+              const message = JSON.parse(data.toString());
+              if (message.type === 'audioComplete') {
+                this.emit('audioComplete');
+              }
+            } catch (err) {
+              console.error('Failed to parse WebSocket message:', err);
+            }
+          });
           
           ws.on('close', () => {
             console.log('OBS overlay disconnected');

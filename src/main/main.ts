@@ -8,6 +8,10 @@ import { getTwitchService } from './twitch/twitchService';
 import { TwitchOAuthService } from './twitch/oauthService';
 import { getTwitchApiService } from './twitch/twitchApiService';
 import { getOBSServer } from './obs/obsServer';
+import { getAwsPollyService } from './tts/awsPollyService';
+import { getAzureTtsService } from './tts/azureTtsService';
+import { getGoogleTtsService } from './tts/googleTtsService';
+import { getVoiceScannerService } from './tts/voiceScannerService';
 
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
@@ -85,6 +89,73 @@ app.on('ready', () => {
     obsServer.start().catch(err => {
       console.error('Failed to start OBS server:', err);
     });
+  }
+
+  // Auto-configure TTS providers if enabled
+  const awsEnabled = DatabaseService.getSetting('tts_aws_enabled');
+  if (awsEnabled === 'true') {
+    const accessKeyId = DatabaseService.getSetting('tts_aws_access_key');
+    const secretAccessKey = DatabaseService.getSetting('tts_aws_secret_key');
+    const region = DatabaseService.getSetting('tts_aws_region');
+    const engine = DatabaseService.getSetting('tts_aws_engine');
+    
+    if (accessKeyId && secretAccessKey && region) {
+      console.log('Auto-configuring AWS Polly...');
+      const awsService = getAwsPollyService();
+      awsService.configure({
+        accessKeyId,
+        secretAccessKey,
+        region,
+        engine: (engine as 'standard' | 'neural') || 'neural'
+      });
+    }
+  }
+
+  const azureEnabled = DatabaseService.getSetting('tts_azure_enabled');
+  if (azureEnabled === 'true') {
+    const subscriptionKey = DatabaseService.getSetting('tts_azure_subscription_key');
+    const region = DatabaseService.getSetting('tts_azure_region');
+    
+    if (subscriptionKey && region) {
+      console.log('Auto-configuring Azure TTS...');
+      const azureService = getAzureTtsService();
+      azureService.configure({ subscriptionKey, region });
+    }
+  }
+
+  const googleEnabled = DatabaseService.getSetting('tts_google_enabled');
+  if (googleEnabled === 'true') {
+    const serviceAccountJson = DatabaseService.getSetting('tts_google_service_account_json');
+    
+    if (serviceAccountJson) {
+      console.log('Auto-configuring Google Cloud TTS...');
+      const googleService = getGoogleTtsService();
+      try {
+        googleService.configure({ serviceAccountJson });
+      } catch (err) {
+        console.error('Failed to configure Google Cloud TTS:', err);
+      }
+    }
+  }
+
+  // Auto-scan voices on startup if any provider is configured
+  const lastScan = DatabaseService.getSetting('tts_voices_last_scanned');
+  const anyProviderConfigured = 
+    (awsEnabled === 'true' && DatabaseService.getSetting('tts_aws_access_key')) ||
+    (azureEnabled === 'true' && DatabaseService.getSetting('tts_azure_subscription_key')) ||
+    (googleEnabled === 'true' && DatabaseService.getSetting('tts_google_service_account_json'));
+  
+  if (anyProviderConfigured && !lastScan) {
+    console.log('No voices scanned yet, triggering initial scan...');
+    setTimeout(async () => {
+      try {
+        const scannerService = getVoiceScannerService();
+        const results = await scannerService.scanAllProviders();
+        console.log('Initial voice scan complete:', results);
+      } catch (err) {
+        console.error('Failed to auto-scan voices:', err);
+      }
+    }, 2000); // Wait 2 seconds for app to fully initialize
   }
 });
 
@@ -234,6 +305,25 @@ ipcMain.handle('obs:getStatus', () => {
 ipcMain.handle('obs:broadcastEvent', (_event, event: { type: string; item?: any }) => {
   obsServer.broadcast(event);
   return true;
+});
+
+// Wait for OBS audio completion
+ipcMain.handle('obs:waitForAudioComplete', () => {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      console.log('[Main] ⚠️ TIMEOUT waiting for audio completion after 30 seconds');
+      obsServer.off('audioComplete', handler);
+      resolve({ success: false, error: 'Timeout waiting for audio completion' });
+    }, 30000); // 30 second timeout
+    
+    const handler = () => {
+      clearTimeout(timeout);
+      obsServer.off('audioComplete', handler);
+      resolve({ success: true });
+    };
+    
+    obsServer.once('audioComplete', handler);
+  });
 });
 
 // Twitch IPC handlers
@@ -425,3 +515,124 @@ ipcMain.handle('twitch:api:unbanUser', async (_event, username: string) => {
     return { success: false, error: String(error) };
   }
 });
+
+// TTS Provider handlers
+ipcMain.handle('tts:aws:configure', async (_event, config: { accessKeyId: string; secretAccessKey: string; region: string; engine: 'standard' | 'neural' }) => {
+  try {
+    const awsService = getAwsPollyService();
+    awsService.configure(config);
+    
+    // Save configuration to database
+    await DatabaseService.setSetting('tts_aws_access_key', config.accessKeyId);
+    await DatabaseService.setSetting('tts_aws_secret_key', config.secretAccessKey);
+    await DatabaseService.setSetting('tts_aws_region', config.region);
+    await DatabaseService.setSetting('tts_aws_engine', config.engine);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:aws:testConnection', async () => {
+  try {
+    const awsService = getAwsPollyService();
+    const isConnected = await awsService.testConnection();
+    return { success: isConnected };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:azure:configure', async (_event, config: { subscriptionKey: string; region: string }) => {
+  try {
+    const azureService = getAzureTtsService();
+    azureService.configure(config);
+    
+    // Save configuration to database
+    await DatabaseService.setSetting('tts_azure_subscription_key', config.subscriptionKey);
+    await DatabaseService.setSetting('tts_azure_region', config.region);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:azure:testConnection', async () => {
+  try {
+    const azureService = getAzureTtsService();
+    const isConnected = await azureService.testConnection();
+    return { success: isConnected };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:google:configure', async (_event, config: { serviceAccountJson: string }) => {
+  try {
+    const googleService = getGoogleTtsService();
+    googleService.configure(config);
+    
+    // Save configuration to database
+    await DatabaseService.setSetting('tts_google_service_account_json', config.serviceAccountJson);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:google:testConnection', async () => {
+  try {
+    const googleService = getGoogleTtsService();
+    const isConnected = await googleService.testConnection();
+    return { success: isConnected };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:scanVoices', async () => {
+  try {
+    const scannerService = getVoiceScannerService();
+    const results = await scannerService.scanAllProviders();
+    return { success: true, results };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('tts:synthesize', async (_event, { text, voiceId, provider, speed, volume }) => {
+  try {
+    let audioBuffer: Buffer;
+    
+    switch (provider) {
+      case 'aws': {
+        const awsService = getAwsPollyService();
+        audioBuffer = await awsService.synthesize(text, voiceId, { speed, volume });
+        break;
+      }
+      case 'azure': {
+        const azureService = getAzureTtsService();
+        audioBuffer = await azureService.synthesize(text, voiceId, { speed, volume });
+        break;
+      }
+      case 'google': {
+        const googleService = getGoogleTtsService();
+        audioBuffer = await googleService.synthesize(text, voiceId, { speed, volume });
+        break;
+      }
+      default:
+        throw new Error(`Unsupported provider: ${provider}`);
+    }
+    
+    // Return audio as base64 for playback in renderer
+    const base64Audio = audioBuffer.toString('base64');
+    return { success: true, audioData: base64Audio };
+  } catch (error) {
+    console.error('TTS synthesis error:', error);
+    return { success: false, error: String(error) };
+  }
+});
+

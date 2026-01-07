@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 -- Schema version tracking
@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS tts_voices (
   language_name TEXT NOT NULL,
   region TEXT,
   gender TEXT,
+  voice_type TEXT,                  -- 'standard', 'neural', NULL for webspeech
   is_available BOOLEAN DEFAULT 1,   -- Track if voice is currently available
   last_scanned_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,

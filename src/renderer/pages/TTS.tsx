@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getWebSpeechService, WebSpeechVoice } from '../services/webSpeechService';
 import { getTTSQueue, TTSQueueItem } from '../services/ttsQueue';
+import AwsPollyGuide from '../components/guides/AwsPollyGuide';
+import AzureTtsGuide from '../components/guides/AzureTtsGuide';
+import GoogleTtsGuide from '../components/guides/GoogleTtsGuide';
 
 type TTSTab = 'main' | 'rules' | 'access' | 'voice-settings' | 'restrictions';
 
@@ -20,6 +23,35 @@ const TTS: React.FC = () => {
   const [obsRunning, setObsRunning] = useState(false);
   const [obsUrl, setObsUrl] = useState('');
   const [muteInApp, setMuteInApp] = useState(false);
+
+  // Provider states
+  const [webspeechEnabled, setWebspeechEnabled] = useState(true);
+  const [awsEnabled, setAwsEnabled] = useState(false);
+  const [awsAccessKey, setAwsAccessKey] = useState('');
+  const [awsSecretKey, setAwsSecretKey] = useState('');
+  const [awsRegion, setAwsRegion] = useState('us-east-1');
+  const [awsEngine, setAwsEngine] = useState('neural');
+  const [awsTestResult, setAwsTestResult] = useState<string | null>(null);
+  const [awsDisableNeural, setAwsDisableNeural] = useState(false);
+  const [azureEnabled, setAzureEnabled] = useState(false);
+  const [azureSubscriptionKey, setAzureSubscriptionKey] = useState('');
+  const [azureRegion, setAzureRegion] = useState('eastus');
+  const [azureTestResult, setAzureTestResult] = useState<string | null>(null);
+  const [azureDisableNeural, setAzureDisableNeural] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleServiceAccountJson, setGoogleServiceAccountJson] = useState('');
+  const [googleTestResult, setGoogleTestResult] = useState<string | null>(null);
+
+  // Voice filtering
+  const [voiceFilterProvider, setVoiceFilterProvider] = useState<string>('all');
+  const [voiceFilterLanguage, setVoiceFilterLanguage] = useState<string>('all');
+  const [voiceFilterGender, setVoiceFilterGender] = useState<string>('all');
+  const [voiceSearchText, setVoiceSearchText] = useState('');
+
+  // Setup guides
+  const [showAwsGuide, setShowAwsGuide] = useState(false);
+  const [showAzureGuide, setShowAzureGuide] = useState(false);
+  const [showGoogleGuide, setShowGoogleGuide] = useState(false);
 
   // TTS Rules state
   const [filterCommands, setFilterCommands] = useState(true);
@@ -152,6 +184,37 @@ const TTS: React.FC = () => {
       if (vol) setVolume(parseFloat(vol));
       if (spd) setSpeed(parseFloat(spd));
       if (ptch) setPitch(parseFloat(ptch));
+
+      // Load provider settings
+      const wsEnabled = await window.api.invoke('db:getSetting', 'tts_webspeech_enabled');
+      const awsEn = await window.api.invoke('db:getSetting', 'tts_aws_enabled');
+      const awsKey = await window.api.invoke('db:getSetting', 'tts_aws_access_key');
+      const awsSecret = await window.api.invoke('db:getSetting', 'tts_aws_secret_key');
+      const awsReg = await window.api.invoke('db:getSetting', 'tts_aws_region');
+      const awsEng = await window.api.invoke('db:getSetting', 'tts_aws_engine');
+      const awsDisNeural = await window.api.invoke('db:getSetting', 'tts_aws_disable_neural');
+      const azureEn = await window.api.invoke('db:getSetting', 'tts_azure_enabled');
+      const azureSub = await window.api.invoke('db:getSetting', 'tts_azure_subscription_key');
+      const azureReg = await window.api.invoke('db:getSetting', 'tts_azure_region');
+      const azureDisNeural = await window.api.invoke('db:getSetting', 'tts_azure_disable_neural');
+      const googleEn = await window.api.invoke('db:getSetting', 'tts_google_enabled');
+      const googleJson = await window.api.invoke('db:getSetting', 'tts_google_service_account_json');
+      const lastScan = await window.api.invoke('db:getSetting', 'tts_voices_last_scanned');
+
+      if (wsEnabled !== null) setWebspeechEnabled(wsEnabled === 'true');
+      if (awsEn !== null) setAwsEnabled(awsEn === 'true');
+      if (awsKey) setAwsAccessKey(awsKey);
+      if (awsSecret) setAwsSecretKey(awsSecret);
+      if (awsReg) setAwsRegion(awsReg);
+      if (awsEng) setAwsEngine(awsEng);
+      if (awsDisNeural !== null) setAwsDisableNeural(awsDisNeural === 'true');
+      if (azureEn !== null) setAzureEnabled(azureEn === 'true');
+      if (azureSub) setAzureSubscriptionKey(azureSub);
+      if (azureReg) setAzureRegion(azureReg);
+      if (azureDisNeural !== null) setAzureDisableNeural(azureDisNeural === 'true');
+      if (googleEn !== null) setGoogleEnabled(googleEn === 'true');
+      if (googleJson) setGoogleServiceAccountJson(googleJson);
+      if (lastScan) setLastScanTime(new Date(lastScan).toLocaleString());
     } catch (err) {
       console.error('Failed to load TTS settings:', err);
     }
@@ -187,22 +250,27 @@ const TTS: React.FC = () => {
   const handleScanVoices = async () => {
     setIsScanning(true);
     try {
-      // Get voices from browser's Web Speech API
-      const speechVoices = window.speechSynthesis.getVoices();
+      // Cache WebSpeech voices first so backend can scan them
+      const webspeechEnabled = await window.api.invoke('db:getSetting', 'tts_webspeech_enabled');
+      if (webspeechEnabled === 'true') {
+        const wsVoices = await webSpeechService.getVoices();
+        await window.api.invoke('db:setSetting', 'webspeech_voices_cache', JSON.stringify(wsVoices));
+      }
       
-      // Send voices to main process to store in database
-      await window.api.invoke('db:syncWebSpeechVoices', speechVoices.map(v => ({
-        voiceURI: v.voiceURI,
-        name: v.name,
-        lang: v.lang,
-        localService: v.localService,
-        default: v.default
-      })));
+      // Call backend voice scanner that scans all enabled providers
+      await window.api.invoke('tts:scanVoices');
       
+      // Reload voices from database
       await loadVoices();
-      setLastScanTime(new Date().toLocaleString());
+      
+      // Update last scan time
+      const lastScan = await window.api.invoke('db:getSetting', 'tts_voices_last_scanned');
+      if (lastScan) {
+        setLastScanTime(new Date(lastScan).toLocaleString());
+      }
     } catch (err) {
       console.error('Failed to scan voices:', err);
+      alert('Failed to scan voices. Check console for details.');
     } finally {
       setIsScanning(false);
     }
@@ -241,16 +309,246 @@ const TTS: React.FC = () => {
     saveSetting('tts_default_pitch', val.toString());
   };
 
-  const handleTestVoice = () => {
-    ttsQueue.add({
-      id: `test-${Date.now()}`,
-      text: testText,
-      voiceId: selectedVoice,
-      provider: 'webspeech',
-      speed,
-      pitch,
-      volume
-    });
+  const handleTestVoice = async () => {
+    const selectedVoiceObj = voices.find(v => v.voice_id === selectedVoice);
+    const provider = selectedVoiceObj?.provider || 'webspeech';
+    
+    // For non-webspeech providers, use backend synthesis
+    if (provider !== 'webspeech') {
+      try {
+        const result = await window.api.invoke('tts:synthesize', {
+          text: testText,
+          voiceId: selectedVoice,
+          provider,
+          speed,
+          volume
+        });
+        
+        if (result.success && result.audioData) {
+          // Play the audio data
+          const audio = new Audio(`data:audio/mp3;base64,${result.audioData}`);
+          audio.volume = volume;
+          await audio.play();
+          console.log('TTS test completed via backend');
+        } else {
+          throw new Error(result.error || 'Failed to synthesize audio');
+        }
+      } catch (err) {
+        console.error('TTS test failed:', err);
+        alert(`TTS test failed: ${err}`);
+      }
+    } else {
+      // Use local WebSpeech for webspeech provider
+      ttsQueue.add({
+        id: `test-${Date.now()}`,
+        text: testText,
+        voiceId: selectedVoice,
+        provider: 'webspeech',
+        speed,
+        pitch,
+        volume
+      });
+    }
+  };
+
+  // Provider configuration handlers
+  const handleAwsConfigure = async () => {
+    try {
+      setAwsTestResult('⏳ Configuring...');
+      await window.api.invoke('tts:aws:configure', {
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: awsRegion,
+        engine: awsEngine
+      });
+      setAwsTestResult(null);
+      alert('AWS Polly configured successfully!');
+    } catch (err) {
+      setAwsTestResult(`❌ Configuration failed: ${err}`);
+      console.error('Failed to configure AWS:', err);
+    }
+  };
+
+  const handleAwsTestConnection = async () => {
+    try {
+      setAwsTestResult('⏳ Configuring and testing connection...');
+      // Save configuration first
+      await window.api.invoke('tts:aws:configure', {
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: awsRegion,
+        engine: awsEngine
+      });
+      // Then test the connection
+      const result = await window.api.invoke('tts:aws:testConnection');
+      if (result.success) {
+        setAwsTestResult('✅ Connection successful!');
+      } else {
+        setAwsTestResult(`❌ Connection failed: ${result.error}`);
+      }
+    } catch (err) {
+      setAwsTestResult(`❌ Connection failed: ${err}`);
+      console.error('Failed to test AWS connection:', err);
+    }
+  };
+
+  const handleAwsDisableNeuralToggle = async (enabled: boolean) => {
+    try {
+      setAwsDisableNeural(enabled);
+      await window.api.invoke('db:setSetting', 'tts_aws_disable_neural', enabled ? 'true' : 'false');
+      // Trigger rescan to update available voices
+      if (awsEnabled) {
+        await handleScanVoices();
+      }
+    } catch (err) {
+      console.error('Failed to toggle AWS neural disable:', err);
+    }
+  };
+
+  const handleAzureConfigure = async () => {
+    try {
+      setAzureTestResult('⏳ Configuring...');
+      await window.api.invoke('tts:azure:configure', {
+        subscriptionKey: azureSubscriptionKey,
+        region: azureRegion
+      });
+      setAzureTestResult(null);
+      alert('Azure TTS configured successfully!');
+    } catch (err) {
+      setAzureTestResult(`❌ Configuration failed: ${err}`);
+      console.error('Failed to configure Azure:', err);
+    }
+  };
+
+  const handleAzureTestConnection = async () => {
+    try {
+      setAzureTestResult('⏳ Configuring and testing connection...');
+      // Save configuration first
+      await window.api.invoke('tts:azure:configure', {
+        subscriptionKey: azureSubscriptionKey,
+        region: azureRegion
+      });
+      // Then test the connection
+      const result = await window.api.invoke('tts:azure:testConnection');
+      if (result.success) {
+        setAzureTestResult('✅ Connection successful!');
+      } else {
+        setAzureTestResult(`❌ Connection failed: ${result.error}`);
+      }
+    } catch (err) {
+      setAzureTestResult(`❌ Connection failed: ${err}`);
+      console.error('Failed to test Azure connection:', err);
+    }
+  };
+
+  const handleAzureDisableNeuralToggle = async (enabled: boolean) => {
+    try {
+      setAzureDisableNeural(enabled);
+      await window.api.invoke('db:setSetting', 'tts_azure_disable_neural', enabled ? 'true' : 'false');
+      // Trigger rescan to update available voices
+      if (azureEnabled) {
+        await handleScanVoices();
+      }
+    } catch (err) {
+      console.error('Failed to toggle Azure neural disable:', err);
+    }
+  };
+
+  const handleGoogleConfigure = async () => {
+    try {
+      setGoogleTestResult('⏳ Configuring...');
+      await window.api.invoke('tts:google:configure', {
+        serviceAccountJson: googleServiceAccountJson
+      });
+      setGoogleTestResult(null);
+      alert('Google Cloud TTS configured successfully!');
+    } catch (err) {
+      setGoogleTestResult(`❌ Configuration failed: ${err}`);
+      console.error('Failed to configure Google:', err);
+    }
+  };
+
+  const handleGoogleTestConnection = async () => {
+    try {
+      setGoogleTestResult('⏳ Configuring and testing connection...');
+      // Save configuration first
+      await window.api.invoke('tts:google:configure', {
+        serviceAccountJson: googleServiceAccountJson
+      });
+      // Then test the connection
+      const result = await window.api.invoke('tts:google:testConnection');
+      if (result.success) {
+        setGoogleTestResult('✅ Connection successful!');
+      } else {
+        setGoogleTestResult(`❌ Connection failed: ${result.error}`);
+      }
+    } catch (err) {
+      setGoogleTestResult(`❌ Connection failed: ${err}`);
+      console.error('Failed to test Google connection:', err);
+    }
+  };
+
+  const handleProviderToggle = async (provider: string, enabled: boolean) => {
+    const settingKey = `tts_${provider}_enabled`;
+    await saveSetting(settingKey, enabled.toString());
+    
+    switch(provider) {
+      case 'webspeech':
+        setWebspeechEnabled(enabled);
+        break;
+      case 'aws':
+        setAwsEnabled(enabled);
+        break;
+      case 'azure':
+        setAzureEnabled(enabled);
+        break;
+      case 'google':
+        setGoogleEnabled(enabled);
+        break;
+    }
+  };
+
+  // Get filtered voices based on filters
+  const getFilteredVoices = () => {
+    let filtered = [...voices];
+
+    // Filter by provider
+    if (voiceFilterProvider !== 'all') {
+      filtered = filtered.filter(v => v.provider === voiceFilterProvider);
+    }
+
+    // Filter by language
+    if (voiceFilterLanguage !== 'all') {
+      filtered = filtered.filter(v => v.language_name === voiceFilterLanguage);
+    }
+
+    // Filter by gender (if available)
+    if (voiceFilterGender !== 'all') {
+      filtered = filtered.filter(v => (v as any).gender === voiceFilterGender);
+    }
+
+    // Filter by search text
+    if (voiceSearchText) {
+      const searchLower = voiceSearchText.toLowerCase();
+      filtered = filtered.filter(v => 
+        v.name.toLowerCase().includes(searchLower) ||
+        v.voice_id.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return filtered;
+  };
+
+  // Get unique languages from voices
+  const getAvailableLanguages = () => {
+    const languages = new Set(voices.map(v => v.language_name));
+    return Array.from(languages).sort();
+  };
+
+  // Get unique genders from voices
+  const getAvailableGenders = () => {
+    const genders = new Set(voices.map(v => (v as any).gender).filter(Boolean));
+    return Array.from(genders).sort();
   };
 
   const handleClearQueue = () => {
@@ -503,13 +801,402 @@ const TTS: React.FC = () => {
         </p>
       </div>
 
+      {/* Provider Configuration */}
+      <div className="card">
+        <h3 style={{ marginBottom: '20px' }}>TTS Provider Configuration</h3>
+
+        {/* WebSpeech */}
+        <div style={{ padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px', marginBottom: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h4 style={{ margin: 0 }}>🌐 WebSpeech (Browser Built-in)</h4>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={webspeechEnabled}
+                onChange={(e) => handleProviderToggle('webspeech', e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              <span>{webspeechEnabled ? 'Enabled' : 'Disabled'}</span>
+            </label>
+          </div>
+          <p style={{ fontSize: '13px', color: '#aaa', margin: 0 }}>
+            Free • No configuration required • Basic quality voices
+          </p>
+        </div>
+
+        {/* AWS Polly */}
+        <div style={{ padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px', marginBottom: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h4 style={{ margin: 0 }}>🔊 AWS Polly</h4>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="secondary" 
+                onClick={() => setShowAwsGuide(true)}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                📖 Setup Guide
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={awsEnabled}
+                  onChange={(e) => handleProviderToggle('aws', e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>{awsEnabled ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
+          </div>
+          <div style={{ marginBottom: '15px' }}>
+            <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+              High-quality neural voices • Extensive language support
+            </p>
+            <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+              💰 Standard: $4/million chars • Neural: $16/million chars • Free tier: 5M chars/month for 12 months
+            </p>
+          </div>
+
+          {awsEnabled && (
+            <div style={{ paddingLeft: '10px', borderLeft: '2px solid #505050' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Access Key ID</label>
+                <input
+                  type="text"
+                  value={awsAccessKey}
+                  onChange={(e) => setAwsAccessKey(e.target.value)}
+                  placeholder="AKIAIOSFODNN7EXAMPLE"
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                />
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Secret Access Key</label>
+                <input
+                  type="password"
+                  value={awsSecretKey}
+                  onChange={(e) => setAwsSecretKey(e.target.value)}
+                  placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                />
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Region</label>
+                <select
+                  value={awsRegion}
+                  onChange={(e) => setAwsRegion(e.target.value)}
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                >
+                  <option value="us-east-1">US East (N. Virginia)</option>
+                  <option value="us-west-2">US West (Oregon)</option>
+                  <option value="eu-west-1">EU (Ireland)</option>
+                  <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Engine</label>
+                <select
+                  value={awsEngine}
+                  onChange={(e) => setAwsEngine(e.target.value)}
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                >
+                  <option value="neural">Neural (High Quality)</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '13px' }}>
+                  <input
+                    type="checkbox"
+                    checked={awsDisableNeural}
+                    onChange={(e) => handleAwsDisableNeuralToggle(e.target.checked)}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span>Disable Neural Voices (Standard only - $4/M vs $16/M)</span>
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <button className="primary" onClick={handleAwsConfigure} style={{ flex: 1, padding: '8px' }}>
+                  Save Configuration
+                </button>
+                <button className="secondary" onClick={handleAwsTestConnection} style={{ flex: 1, padding: '8px' }}>
+                  Test Connection
+                </button>
+              </div>
+              {awsTestResult && (
+                <div style={{ fontSize: '13px', padding: '8px', backgroundColor: '#0a0a0a', borderRadius: '4px' }}>
+                  {awsTestResult}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Azure Cognitive Services */}
+        <div style={{ padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px', marginBottom: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h4 style={{ margin: 0 }}>☁️ Azure Cognitive Services</h4>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="secondary" 
+                onClick={() => setShowAzureGuide(true)}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                📖 Setup Guide
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={azureEnabled}
+                  onChange={(e) => handleProviderToggle('azure', e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>{azureEnabled ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
+          </div>
+          <div style={{ marginBottom: '15px' }}>
+            <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+              High-quality voices • Extensive language support
+            </p>
+            <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+              💰 Standard: $4/million chars (5M free/month) • Neural: $16/million chars (500K free/month)
+            </p>
+          </div>
+
+          {azureEnabled && (
+            <div style={{ paddingLeft: '10px', borderLeft: '2px solid #505050' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Subscription Key</label>
+                <input
+                  type="password"
+                  value={azureSubscriptionKey}
+                  onChange={(e) => setAzureSubscriptionKey(e.target.value)}
+                  placeholder="Enter your Azure subscription key"
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                />
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>Region</label>
+                <select
+                  value={azureRegion}
+                  onChange={(e) => setAzureRegion(e.target.value)}
+                  style={{ width: '100%', padding: '8px', fontSize: '13px' }}
+                >
+                  <option value="eastus">East US</option>
+                  <option value="westus">West US</option>
+                  <option value="westeurope">West Europe</option>
+                  <option value="southeastasia">Southeast Asia</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '13px' }}>
+                  <input
+                    type="checkbox"
+                    checked={azureDisableNeural}
+                    onChange={(e) => handleAzureDisableNeuralToggle(e.target.checked)}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span>Disable Neural Voices (Standard only - $4/M vs $16/M)</span>
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <button className="primary" onClick={handleAzureConfigure} style={{ flex: 1, padding: '8px' }}>
+                  Save Configuration
+                </button>
+                <button className="secondary" onClick={handleAzureTestConnection} style={{ flex: 1, padding: '8px' }}>
+                  Test Connection
+                </button>
+              </div>
+              {azureTestResult && (
+                <div style={{ fontSize: '13px', padding: '8px', backgroundColor: '#0a0a0a', borderRadius: '4px' }}>
+                  {azureTestResult}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Google Cloud TTS */}
+        <div style={{ padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px', marginBottom: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h4 style={{ margin: 0 }}>🎙️ Google Cloud TTS</h4>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 'bold',
+                padding: '3px 8px',
+                backgroundColor: '#ff9900',
+                color: '#000',
+                borderRadius: '4px',
+                textTransform: 'uppercase'
+              }}>Premium</span>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button 
+                className="secondary" 
+                onClick={() => setShowGoogleGuide(true)}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                📖 Setup Guide
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={googleEnabled}
+                  onChange={(e) => handleProviderToggle('google', e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>{googleEnabled ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
+          </div>
+          <p style={{ fontSize: '13px', color: '#ff9900', marginBottom: '15px', fontWeight: 'bold' }}>
+            ⚠️ Premium Service: $10/million characters after free trial • WaveNet voices
+          </p>
+
+          {googleEnabled && (
+            <div style={{ paddingLeft: '10px', borderLeft: '2px solid #505050' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
+                  Service Account JSON
+                </label>
+                <textarea
+                  value={googleServiceAccountJson}
+                  onChange={(e) => setGoogleServiceAccountJson(e.target.value)}
+                  placeholder='{"type": "service_account", "project_id": "...", ...}'
+                  rows={4}
+                  style={{ width: '100%', padding: '8px', fontSize: '12px', fontFamily: 'monospace' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <button className="primary" onClick={handleGoogleConfigure} style={{ flex: 1, padding: '8px' }}>
+                  Save Configuration
+                </button>
+                <button className="secondary" onClick={handleGoogleTestConnection} style={{ flex: 1, padding: '8px' }}>
+                  Test Connection
+                </button>
+              </div>
+              {googleTestResult && (
+                <div style={{ fontSize: '13px', padding: '8px', backgroundColor: '#0a0a0a', borderRadius: '4px' }}>
+                  {googleTestResult}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Voice Selection */}
       <div className="card">
-        <h3 style={{ marginBottom: '15px' }}>Voice Settings</h3>
+        <h3 style={{ marginBottom: '15px' }}>Default Voice Settings</h3>
+        
+        {/* Voice Filters */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: '10px', 
+          marginBottom: '15px',
+          padding: '15px',
+          backgroundColor: '#1a1a1a',
+          borderRadius: '8px'
+        }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: '#aaa' }}>
+              Provider
+            </label>
+            <select
+              value={voiceFilterProvider}
+              onChange={(e) => setVoiceFilterProvider(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                backgroundColor: '#0a0a0a',
+                color: 'white',
+                border: '1px solid #505050',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}
+            >
+              <option value="all">All Providers</option>
+              <option value="webspeech">WebSpeech</option>
+              <option value="aws">AWS Polly</option>
+              <option value="azure">Azure</option>
+              <option value="google">Google</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: '#aaa' }}>
+              Language
+            </label>
+            <select
+              value={voiceFilterLanguage}
+              onChange={(e) => setVoiceFilterLanguage(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                backgroundColor: '#0a0a0a',
+                color: 'white',
+                border: '1px solid #505050',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}
+            >
+              <option value="all">All Languages</option>
+              {getAvailableLanguages().map(lang => (
+                <option key={lang} value={lang}>{lang}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: '#aaa' }}>
+              Gender
+            </label>
+            <select
+              value={voiceFilterGender}
+              onChange={(e) => setVoiceFilterGender(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                backgroundColor: '#0a0a0a',
+                color: 'white',
+                border: '1px solid #505050',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}
+            >
+              <option value="all">All Genders</option>
+              {getAvailableGenders().map(gender => (
+                <option key={gender} value={gender}>{gender}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', color: '#aaa' }}>
+              Search
+            </label>
+            <input
+              type="text"
+              value={voiceSearchText}
+              onChange={(e) => setVoiceSearchText(e.target.value)}
+              placeholder="Search voices..."
+              style={{
+                width: '100%',
+                padding: '8px',
+                backgroundColor: '#0a0a0a',
+                color: 'white',
+                border: '1px solid #505050',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}
+            />
+          </div>
+        </div>
         
         <div style={{ marginBottom: '15px' }}>
           <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
-            Voice
+            Voice ({getFilteredVoices().length} available)
           </label>
           <select
             value={selectedVoice}
@@ -524,7 +1211,7 @@ const TTS: React.FC = () => {
               fontSize: '14px'
             }}
           >
-            {voices.map((voice) => (
+            {getFilteredVoices().map((voice) => (
               <option key={voice.voice_id} value={voice.voice_id}>
                 {voice.name} - {voice.language_name} ({voice.provider})
               </option>
@@ -736,6 +1423,11 @@ const TTS: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Setup Guides */}
+      {showAwsGuide && <AwsPollyGuide onClose={() => setShowAwsGuide(false)} />}
+      {showAzureGuide && <AzureTtsGuide onClose={() => setShowAzureGuide(false)} />}
+      {showGoogleGuide && <GoogleTtsGuide onClose={() => setShowGoogleGuide(false)} />}
     </>
   );
 
@@ -1698,7 +2390,7 @@ const TTS: React.FC = () => {
                   <option value="">Select a voice...</option>
                   {voices.map(voice => (
                     <option key={voice.voice_id} value={voice.voice_id}>
-                      {voice.name} ({voice.language_code})
+                      [{voice.provider.toUpperCase()}] {voice.name} ({voice.language_code})
                     </option>
                   ))}
                 </select>

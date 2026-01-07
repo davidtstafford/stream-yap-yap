@@ -147,6 +147,64 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * Validate voice selection - ensure provider is enabled and neural voices aren't disabled
+   * Falls back to default voice or WebSpeech if current voice is invalid
+   */
+  const validateVoiceSelection = async (voiceId: string, provider: string): Promise<{ voiceId: string; provider: string }> => {
+    try {
+      // Check if provider is enabled
+      const providerEnabled = await window.api.invoke('db:getSetting', `tts_${provider}_enabled`);
+      if (providerEnabled !== 'true' && provider !== 'webspeech') {
+        console.log(`[Voice Validation] Provider ${provider} is disabled, falling back`);
+        // Provider disabled, use default voice
+        const defaultVoice = await window.api.invoke('db:getSetting', 'tts_default_voice');
+        if (defaultVoice) {
+          return validateVoiceSelection(defaultVoice, 'webspeech'); // Recursively validate default
+        }
+        return { voiceId: '', provider: 'webspeech' }; // Fallback to WebSpeech
+      }
+
+      // Check if voice exists and get its type
+      const voiceInfo = await window.api.invoke('db:query',
+        'SELECT provider, voice_type FROM tts_voices WHERE voice_id = ? AND provider = ? LIMIT 1',
+        [voiceId, provider]
+      );
+
+      if (!voiceInfo || voiceInfo.length === 0) {
+        console.log(`[Voice Validation] Voice ${voiceId} not found, falling back`);
+        // Voice doesn't exist, use default
+        const defaultVoice = await window.api.invoke('db:getSetting', 'tts_default_voice');
+        if (defaultVoice && defaultVoice !== voiceId) {
+          return validateVoiceSelection(defaultVoice, 'webspeech');
+        }
+        return { voiceId: '', provider: 'webspeech' };
+      }
+
+      const voiceType = voiceInfo[0].voice_type;
+
+      // Check if neural voices are disabled for this provider
+      if (voiceType === 'neural') {
+        const neuralDisabled = await window.api.invoke('db:getSetting', `tts_${provider}_disable_neural`);
+        if (neuralDisabled === 'true') {
+          console.log(`[Voice Validation] Neural voices disabled for ${provider}, falling back`);
+          // Neural disabled, use default voice
+          const defaultVoice = await window.api.invoke('db:getSetting', 'tts_default_voice');
+          if (defaultVoice && defaultVoice !== voiceId) {
+            return validateVoiceSelection(defaultVoice, 'webspeech');
+          }
+          return { voiceId: '', provider: 'webspeech' };
+        }
+      }
+
+      // Voice is valid
+      return { voiceId, provider };
+    } catch (err) {
+      console.error('[Voice Validation] Error validating voice:', err);
+      return { voiceId: '', provider: 'webspeech' }; // Fallback on error
+    }
+  };
+
   const processMessageForTTS = async (message: ChatMessage) => {
     const messageKey = `${message.viewer_id}-${message.timestamp}`;
     if (processedMessagesRef.current.has(messageKey)) {
@@ -241,12 +299,30 @@ const App: React.FC = () => {
       const pitch = voicePrefs?.pitch || (defaultPitch ? parseFloat(defaultPitch) : 1.0);
       const volume = voicePrefs?.volume || (defaultVolume ? parseFloat(defaultVolume) : 1.0);
       
+      // Get provider for the voice
+      let provider = voicePrefs?.provider || 'webspeech';
+      if (!voicePrefs && voiceId) {
+        // If using default voice, look up its provider from tts_voices table
+        const voiceInfo = await window.api.invoke('db:query', 
+          'SELECT provider FROM tts_voices WHERE voice_id = ? LIMIT 1',
+          [voiceId]
+        );
+        if (voiceInfo && voiceInfo.length > 0) {
+          provider = voiceInfo[0].provider;
+        }
+      }
+      
+      // Validate voice is allowed (provider enabled, neural not disabled)
+      const validatedVoice = await validateVoiceSelection(voiceId, provider);
+      const finalVoiceId = validatedVoice.voiceId;
+      const finalProvider = validatedVoice.provider;
+      
       // Add to TTS queue with processed text (already includes username if configured)
       ttsQueue.add({
         id: `msg-${message.viewer_id}-${Date.now()}`,
         text: processed.text,
-        voiceId: voiceId || undefined,
-        provider: voicePrefs?.provider || 'webspeech',
+        voiceId: finalVoiceId || undefined,
+        provider: finalProvider,
         speed,
         pitch,
         volume,
