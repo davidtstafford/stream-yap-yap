@@ -8,6 +8,7 @@ export interface TTSVoice {
   language_name: string;
   region?: string;
   gender?: string;
+  voice_type?: string;
 }
 
 export class VoiceService {
@@ -167,5 +168,62 @@ export class VoiceService {
     `).get(voiceId.toLowerCase(), provider) as { is_available: number } | undefined;
     
     return row?.is_available === 1;
+  }
+
+  /**
+   * Search voices by query (searches name, language, voice_id)
+   */
+  static searchVoices(query: string): TTSVoice[] {
+    const db = getDatabase();
+    const searchTerm = `%${query.toLowerCase()}%`;
+    
+    return db.prepare(`
+      SELECT voice_id, name, provider, language_code, language_name, region, gender, voice_type
+      FROM tts_voices 
+      WHERE is_available = 1 
+        AND (
+          LOWER(name) LIKE ? 
+          OR LOWER(voice_id) LIKE ?
+          OR LOWER(language_name) LIKE ?
+          OR LOWER(language_code) LIKE ?
+        )
+      ORDER BY 
+        CASE 
+          WHEN LOWER(name) = ? THEN 1
+          WHEN LOWER(voice_id) = ? THEN 2
+          ELSE 3
+        END,
+        provider, name
+      LIMIT 50
+    `).all(searchTerm, searchTerm, searchTerm, searchTerm, query.toLowerCase(), query.toLowerCase()) as TTSVoice[];
+  }
+
+  /**
+   * Get all available voices (no filter)
+   */
+  static getAllVoices(): TTSVoice[] {
+    const db = getDatabase();
+    
+    return db.prepare(`
+      SELECT voice_id, name, provider, language_code, language_name, region, gender, voice_type
+      FROM tts_voices 
+      WHERE is_available = 1
+      ORDER BY provider, language_name, name
+    `).all() as TTSVoice[];
+  }
+
+  /**
+   * Get voice by ID (searches across all providers)
+   */
+  static getVoiceById(voiceId: string): TTSVoice | null {
+    const db = getDatabase();
+    const row = db.prepare(`
+      SELECT voice_id, name, provider, language_code, language_name, region, gender, voice_type
+      FROM tts_voices 
+      WHERE LOWER(voice_id) = ? AND is_available = 1
+      LIMIT 1
+    `).get(voiceId.toLowerCase()) as TTSVoice | undefined;
+    
+    return row || null;
   }
 }

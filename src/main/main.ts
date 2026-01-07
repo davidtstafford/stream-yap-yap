@@ -12,12 +12,14 @@ import { getAwsPollyService } from './tts/awsPollyService';
 import { getAzureTtsService } from './tts/azureTtsService';
 import { getGoogleTtsService } from './tts/googleTtsService';
 import { getVoiceScannerService } from './tts/voiceScannerService';
+import { getDiscordService } from './discord/discordService';
 
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
 const twitchApiService = getTwitchApiService();
 const oauthService = new TwitchOAuthService();
 const obsServer = getOBSServer();
+const discordService = getDiscordService();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -66,6 +68,12 @@ app.on('ready', () => {
     }
   });
   
+  discordService.onConnectionStatus((connected, error) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('discord:connectionStatus', { connected, error });
+    }
+  });
+  
   // Auto-connect if enabled
   const autoConnect = DatabaseService.getSetting('auto_connect');
   const twitchToken = DatabaseService.getSetting('twitch_token');
@@ -79,6 +87,22 @@ app.on('ready', () => {
       channels: [twitchUsername] // Connect to own channel
     }).catch(err => {
       console.error('Auto-connect failed:', err);
+    });
+  }
+
+  // Auto-connect Discord if enabled
+  const discordToken = DatabaseService.getSetting('discord_token');
+  const discordClientId = DatabaseService.getSetting('discord_client_id');
+  const discordEnabled = DatabaseService.getSetting('discord_enabled');
+  
+  if (discordEnabled === 'true' && discordToken && discordClientId) {
+    console.log('Auto-connecting to Discord...');
+    discordService.connect({
+      token: discordToken,
+      clientId: discordClientId,
+      guildId: DatabaseService.getSetting('discord_guild_id') || undefined
+    }).catch(err => {
+      console.error('Discord auto-connect failed:', err);
     });
   }
 
@@ -161,6 +185,7 @@ app.on('ready', () => {
 
 app.on('window-all-closed', () => {
   twitchService.destroy();
+  discordService.destroy();
   obsServer.stop();
   closeDatabase();
   if (process.platform !== 'darwin') {
@@ -382,6 +407,52 @@ ipcMain.handle('twitch:forgetCredentials', async () => {
   DatabaseService.setSetting('twitch_username', '');
   DatabaseService.setSetting('twitch_token', '');
   DatabaseService.setSetting('twitch_connected', 'false');
+  return { success: true };
+});
+
+// Discord handlers
+ipcMain.handle('discord:connect', async (_event, config: { token: string; clientId: string; guildId?: string }) => {
+  try {
+    await discordService.connect({
+      token: config.token,
+      clientId: config.clientId,
+      guildId: config.guildId
+    });
+    
+    // Save credentials
+    DatabaseService.setSetting('discord_token', config.token);
+    DatabaseService.setSetting('discord_client_id', config.clientId);
+    if (config.guildId) {
+      DatabaseService.setSetting('discord_guild_id', config.guildId);
+    }
+    DatabaseService.setSetting('discord_enabled', 'true');
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('discord:disconnect', async () => {
+  try {
+    await discordService.disconnect();
+    DatabaseService.setSetting('discord_enabled', 'false');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('discord:isConnected', async () => {
+  return discordService.isConnected();
+});
+
+ipcMain.handle('discord:forgetCredentials', async () => {
+  await discordService.disconnect();
+  DatabaseService.setSetting('discord_token', '');
+  DatabaseService.setSetting('discord_client_id', '');
+  DatabaseService.setSetting('discord_guild_id', '');
+  DatabaseService.setSetting('discord_enabled', 'false');
   return { success: true };
 });
 

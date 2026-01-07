@@ -27,6 +27,9 @@ module.exports = {
     __filename: false
   },
   externals: {
-    'better-sqlite3': 'commonjs better-sqlite3'
+    'better-sqlite3': 'commonjs better-sqlite3',
+    'zlib-sync': 'commonjs zlib-sync',
+    'bufferutil': 'commonjs bufferutil',
+    'utf-8-validate': 'commonjs utf-8-validate'
   }
 };
