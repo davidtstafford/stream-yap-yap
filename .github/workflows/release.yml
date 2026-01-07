@@ -88,15 +88,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Clean webpack cache
-        run: |
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue node_modules/.cache
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue release
-        shell: pwsh
-
       - name: Build Windows Installer
-        run: npm run dist:win
+        run: |
+          $env:WEBPACK_CACHE_DISABLED = "true"
+          npm run build
+          npx electron-builder --win
+        shell: pwsh
         env:
           CI: true
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
