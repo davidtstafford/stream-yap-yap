@@ -1,6 +1,6 @@
 {
   "name": "stream-yap-yap",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Stable Twitch Chat-to-TTS application",
   "main": "./dist/main.js",
   "author": "David Stafford",
@@ -68,7 +68,10 @@
       "dist/**/*",
       "package.json"
     ],
-    "npmRebuild": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "npmRebuild": false,
     "buildDependenciesFromSource": false,
     "mac": {
       "target": "dmg",
