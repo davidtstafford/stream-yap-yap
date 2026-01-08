@@ -1,6 +1,6 @@
 {
   "name": "stream-yap-yap",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Stable Twitch Chat-to-TTS application",
   "main": "./dist/main.js",
   "author": "David Stafford",
@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "postinstall": "electron-builder install-app-deps",
     "prod": "npm run build && npm start",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "webpack --config webpack.main.config.js --mode development --watch",
