@@ -8,7 +8,6 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "postinstall": "electron-builder install-app-deps",
     "prod": "npm run build && npm start",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "webpack --config webpack.main.config.js --mode development --watch",
@@ -87,10 +86,5 @@
       "target": "AppImage",
       "category": "Utility"
     }
-  },
-  "optionalDependencies": {
-    "bufferutil": "^4.1.0",
-    "utf-8-validate": "^6.0.6",
-    "zlib-sync": "^0.1.10"
   }
 }

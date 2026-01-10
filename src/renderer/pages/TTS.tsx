@@ -782,6 +782,87 @@ const TTS: React.FC = () => {
             {ttsEnabled ? '✅ TTS Enabled' : '❌ TTS Disabled'}
           </span>
         </label>
+        
+        {/* API Control Guide */}
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '15px', 
+          backgroundColor: '#1a1a1a', 
+          borderRadius: '8px',
+          borderLeft: '3px solid #9147ff'
+        }}>
+          <h4 style={{ marginBottom: '10px', fontSize: '14px', color: '#9147ff' }}>
+            🎛️ Stream Deck Integration
+          </h4>
+          <p style={{ fontSize: '13px', marginBottom: '10px', color: '#ccc' }}>
+            Control TTS directly from your Stream Deck using the System → Open action:
+          </p>
+          <div style={{ 
+            backgroundColor: '#0d0d0d', 
+            padding: '10px', 
+            borderRadius: '4px',
+            marginBottom: '10px'
+          }}>
+            <div style={{ marginBottom: '8px', color: '#888', fontSize: '12px' }}>Endpoint URL:</div>
+            <code style={{ color: '#00ff00', fontSize: '12px', fontFamily: 'monospace' }}>
+              http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts
+            </code>
+          </div>
+          <details style={{ fontSize: '12px', color: '#999', cursor: 'pointer' }}>
+            <summary style={{ marginBottom: '8px', fontWeight: 'bold' }}>📋 Stream Deck Setup Instructions</summary>
+            <div style={{ paddingLeft: '15px', marginTop: '8px', lineHeight: '1.6' }}>
+              <ol style={{ paddingLeft: '20px', marginBottom: '10px' }}>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Add Action:</strong> Drag "System → Open" to a button on your Stream Deck
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Configure URL:</strong> In the action settings, paste one of these commands:
+                  <div style={{ marginTop: '5px' }}>
+                    <p style={{ marginBottom: '5px', marginTop: '8px', color: '#888' }}><strong>Windows (PowerShell):</strong></p>
+                    <div style={{ 
+                      backgroundColor: '#0d0d0d', 
+                      padding: '8px', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '11px',
+                      marginBottom: '8px',
+                      overflowX: 'auto'
+                    }}>
+                      powershell.exe -Command "Invoke-WebRequest -Uri http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts -Method POST"
+                    </div>
+                    <p style={{ marginBottom: '5px', color: '#888' }}><strong>macOS/Linux (curl):</strong></p>
+                    <div style={{ 
+                      backgroundColor: '#0d0d0d', 
+                      padding: '8px', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '11px',
+                      overflowX: 'auto'
+                    }}>
+                      curl -X POST http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts
+                    </div>
+                  </div>
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Customize:</strong> Set a title like "Toggle TTS" and choose an icon
+                </li>
+                <li>
+                  <strong>Test:</strong> Press the button to toggle TTS on/off instantly
+                </li>
+              </ol>
+              <p style={{ 
+                padding: '8px', 
+                backgroundColor: '#1a2a3a', 
+                borderRadius: '4px',
+                marginTop: '10px',
+                fontSize: '11px',
+                color: '#88ccff'
+              }}>
+                💡 <strong>Tip:</strong> Create two buttons - one that enables and one that disables TTS by using OBS HTTP requests with custom on/off endpoints if you prefer dedicated buttons instead of a toggle.
+              </p>
+            </div>
+          </details>
+        </div>
       </div>
 
       {/* Voice Management */}
