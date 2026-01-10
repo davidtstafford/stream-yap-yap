@@ -3,6 +3,7 @@
 
 import { DatabaseService } from '../database/service';
 import { getDatabase } from '../database/connection';
+import { getApiServer } from '../api/apiServer';
 
 export interface CommandContext {
   username: string;
@@ -544,6 +545,11 @@ export class CommandProcessor {
    */
   private async handleMuteTTS(context: CommandContext, args: string[]): Promise<CommandResult> {
     await DatabaseService.setSetting('tts_enabled', 'false');
+    
+    // Notify renderer of status change
+    const apiServer = getApiServer();
+    apiServer.emit('tts-toggled', false);
+    
     return {
       success: true,
       response: 'TTS has been globally muted'
@@ -555,6 +561,11 @@ export class CommandProcessor {
    */
   private async handleUnmuteTTS(context: CommandContext, args: string[]): Promise<CommandResult> {
     await DatabaseService.setSetting('tts_enabled', 'true');
+    
+    // Notify renderer of status change
+    const apiServer = getApiServer();
+    apiServer.emit('tts-toggled', true);
+    
     return {
       success: true,
       response: 'TTS has been globally unmuted'

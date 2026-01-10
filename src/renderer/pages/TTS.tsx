@@ -23,6 +23,7 @@ const TTS: React.FC = () => {
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
   const [obsRunning, setObsRunning] = useState(false);
   const [obsUrl, setObsUrl] = useState('');
+  const [apiUrl, setApiUrl] = useState('http://localhost:8766');
   const [muteInApp, setMuteInApp] = useState(false);
 
   // Provider states
@@ -125,6 +126,9 @@ const TTS: React.FC = () => {
     // Check OBS server status
     checkObsStatus();
     
+    // Load API server URL
+    loadApiUrl();
+    
     // Load mute in-app setting
     loadMuteInAppSetting();
     
@@ -158,8 +162,15 @@ const TTS: React.FC = () => {
       setCurrentItem(null);
     });
 
+    // Listen for TTS status changes from HTTP endpoint or chat commands
+    const handleTtsStatusChange = (enabled: boolean) => {
+      setTtsEnabled(enabled);
+    };
+    const unsubscribeTtsStatus = window.api.on('tts:status-changed', handleTtsStatusChange);
+
     return () => {
       clearInterval(restrictionsInterval);
+      unsubscribeTtsStatus();
     };
   }, []);
 
@@ -571,6 +582,15 @@ const TTS: React.FC = () => {
     }
   };
 
+  const loadApiUrl = async () => {
+    try {
+      const url = await window.api.invoke('api:getUrl');
+      setApiUrl(url);
+    } catch (err) {
+      console.error('Failed to load API URL:', err);
+    }
+  };
+
   const handleStartObs = async () => {
     try {
       const result = await window.api.invoke('obs:start');
@@ -805,7 +825,7 @@ const TTS: React.FC = () => {
           }}>
             <div style={{ marginBottom: '8px', color: '#888', fontSize: '12px' }}>Endpoint URL:</div>
             <code style={{ color: '#00ff00', fontSize: '12px', fontFamily: 'monospace' }}>
-              http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts
+              {apiUrl}/toggle-tts
             </code>
           </div>
           <details style={{ fontSize: '12px', color: '#999', cursor: 'pointer' }}>
@@ -828,7 +848,7 @@ const TTS: React.FC = () => {
                       marginBottom: '8px',
                       overflowX: 'auto'
                     }}>
-                      powershell.exe -Command "Invoke-WebRequest -Uri http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts -Method POST"
+                      powershell.exe -Command "Invoke-WebRequest -Uri {apiUrl}/toggle-tts -Method POST"
                     </div>
                     <p style={{ marginBottom: '5px', color: '#888' }}><strong>macOS/Linux (curl):</strong></p>
                     <div style={{ 
@@ -839,7 +859,7 @@ const TTS: React.FC = () => {
                       fontSize: '11px',
                       overflowX: 'auto'
                     }}>
-                      curl -X POST http://localhost:{obsUrl.split(':')[2] || '8765'}/toggle-tts
+                      curl -X POST {apiUrl}/toggle-tts
                     </div>
                   </div>
                 </li>

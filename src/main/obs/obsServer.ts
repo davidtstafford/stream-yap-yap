@@ -29,31 +29,8 @@ export class OBSServer extends EventEmitter {
     this.app.get('/health', (_req, res) => {
       res.json({ status: 'ok', port: this.port });
     });
-
-    // Toggle TTS endpoint
-    this.app.post('/toggle-tts', async (_req, res) => {
-      try {
-        const db = DatabaseService.getInstance();
-        const currentSettings = await db.getSettings();
-        const newState = !currentSettings.ttsEnabled;
-        await db.saveSetting('ttsEnabled', newState);
-        
-        // Emit event to notify renderer
-        this.emit('tts-toggled', newState);
-        
-        res.json({ 
-          success: true, 
-          ttsEnabled: newState,
-          message: newState ? 'TTS enabled' : 'TTS disabled'
-        });
-      } catch (error) {
-        res.status(500).json({ 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Unknown error' 
-        });
-      }
-    });
   }
+
 
   private getOverlayHTML(): string {
     return `

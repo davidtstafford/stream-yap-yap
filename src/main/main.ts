@@ -8,6 +8,7 @@ import { getTwitchService } from './twitch/twitchService';
 import { TwitchOAuthService } from './twitch/oauthService';
 import { getTwitchApiService } from './twitch/twitchApiService';
 import { getOBSServer } from './obs/obsServer';
+import { getApiServer } from './api/apiServer';
 import { getAwsPollyService } from './tts/awsPollyService';
 import { getAzureTtsService } from './tts/azureTtsService';
 import { getGoogleTtsService } from './tts/googleTtsService';
@@ -19,6 +20,7 @@ const twitchService = getTwitchService();
 const twitchApiService = getTwitchApiService();
 const oauthService = new TwitchOAuthService();
 const obsServer = getOBSServer();
+const apiServer = getApiServer();
 const discordService = getDiscordService();
 
 function createWindow(): void {
@@ -72,6 +74,18 @@ app.on('ready', () => {
     if (mainWindow) {
       mainWindow.webContents.send('discord:connectionStatus', { connected, error });
     }
+  });
+  
+  // Forward API server events to renderer
+  apiServer.on('tts-toggled', (enabled: boolean) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('tts:status-changed', enabled);
+    }
+  });
+  
+  // Start API server (always running)
+  apiServer.start().catch(err => {
+    console.error('Failed to start API server:', err);
   });
   
   // Auto-connect if enabled
@@ -187,6 +201,7 @@ app.on('window-all-closed', () => {
   twitchService.destroy();
   discordService.destroy();
   obsServer.stop();
+  apiServer.stop();
   closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();
@@ -326,7 +341,9 @@ ipcMain.handle('obs:getStatus', () => {
     url: obsServer.getURL()
   };
 });
-
+ipcMain.handle('api:getUrl', async () => {
+  return apiServer.getURL();
+});
 ipcMain.handle('obs:broadcastEvent', (_event, event: { type: string; item?: any }) => {
   obsServer.broadcast(event);
   return true;
