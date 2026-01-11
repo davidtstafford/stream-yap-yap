@@ -15,6 +15,11 @@ import { getGoogleTtsService } from './tts/googleTtsService';
 import { getVoiceScannerService } from './tts/voiceScannerService';
 import { getDiscordService } from './discord/discordService';
 
+// Initialize database immediately on module load
+console.log('Initializing database...');
+initializeDatabase();
+console.log('Database initialized');
+
 let mainWindow: BrowserWindow | null = null;
 const twitchService = getTwitchService();
 const twitchApiService = getTwitchApiService();
@@ -52,9 +57,6 @@ function createWindow(): void {
 
 // Initialize database before creating window
 app.on('ready', () => {
-  console.log('Initializing database...');
-  initializeDatabase();
-  console.log('Database initialized');
   createWindow();
   
   // Set up Twitch service callbacks to send events to renderer
